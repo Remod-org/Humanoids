@@ -1,4 +1,25 @@
-﻿
+﻿#region License (GPL v3)
+/*
+    Loot Protection - Prevent access to player containers
+    Copyright (c) 2020 RFC1920 <desolationoutpostpve@gmail.com>
+
+    This program is free software; you can redistribute it and/or
+    modify it under the terms of the GNU General Public License
+    as published by the Free Software Foundation; either version 2
+    of the License, or (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program; if not, write to the Free Software
+    Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
+
+    Optionally you can also view the license at <http://www.gnu.org/licenses/>.
+*/
+#endregion License (GPL v3)
 using Facepunch;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
@@ -19,16 +40,17 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("Humanoids", "RFC1920", "1.0.1", ResourceId = 856)]
+    [Info("Humanoids", "RFC1920", "1.0.2")]
     [Description("Adds interactive NPCs which can be modded by other plugins")]
-    class Humanoids : CovalencePlugin
+    class Humanoids : RustPlugin
     {
         #region vars
         [PluginReference]
-        private readonly Plugin Kits, RoadFinder;
+        private Plugin Kits, RoadFinder;
 
         private static readonly PathFinding PathFinding;
         private DynamicConfigFile data;
+        private ConfigData configData;
         public static Dictionary<string, AmmoTypes> ammoTypes = new Dictionary<string, AmmoTypes>();
         private List<ulong> isopen = new List<ulong>();
 
@@ -58,44 +80,20 @@ namespace Oxide.Plugins
         #region Message
         private string Lang(string key, string id = null, params object[] args) => string.Format(lang.GetMessage(key, this, id), args);
         private void Message(IPlayer player, string key, params object[] args) => player.Reply(Lang(key, player.Id, args));
-
-        protected override void LoadDefaultMessages()
-        {
-            lang.RegisterMessages(new Dictionary<string, string>
-            {
-                ["npcgui"] = "Humanoid GUI",
-                ["npcguisel"] = "HumanoidGUI NPC Select ",
-                ["npcguikit"] = "HumanoidGUI Kit Select",
-                ["close"] = "Close",
-                ["none"] = "None",
-                ["needselect"] = "Select NPC",
-                ["select"] = "Select",
-                ["editing"] = "Editing",
-                ["mustselect"] = "Please press 'Select' to choose an NPC.",
-                ["guihelp1"] = "For blue buttons, click to toggle true/false.",
-                ["guihelp2"] = "For all values above in gray, you may type a new value and press enter.",
-                ["guihelp3"] = "For kit, press the button to select a kit.",
-                ["add"] = "Add",
-                ["new"] = "Create New",
-                ["remove"] = "Remove",
-                ["spawnhere"] = "Spawn Here",
-                ["tpto"] = "Teleport to NPC",
-                ["name"] = "Name",
-                ["online"] = "Online",
-                ["offline"] = "Offline",
-                ["deauthall"] = "DeAuthAll",
-                ["remove"] = "Remove"
-            }, this);
-        }
         #endregion
 
+        private void DoLog(string message)
+        {
+            if (configData.Options.debug) Interface.Oxide.LogInfo(message);
+        }
+
         #region global
-        //private void Init()
         private void Loaded()
         {
-            object x = RoadFinder.CallHook("GetRoads");
-            Instance = this;
+            LoadConfigVariables();
             AddCovalenceCommand("npc", "cmdNPC");
+
+            Instance = this;
 
             LoadData();
             var tmpnpcs = new Dictionary<ulong, HumanoidInfo>(npcs);
@@ -108,20 +106,27 @@ namespace Oxide.Plugins
             tmpnpcs.Clear();
             SaveData();
 
-            if (x == null)
-                Puts("x was null");
-            var json = JsonConvert.SerializeObject(x);
-            if (json == null)
-                Puts("json was null");
-            roads = JsonConvert.DeserializeObject<Dictionary<string, Road>>(json);
-            if (roads == null)
-                Puts("roads was null");
-            //foreach(var y in x as Dictionary<string, Road>)
-            //{
-            //    roads.Add(y.Key, y.Value);
-            //}
-
             FindMonuments();
+
+            object x = null;
+            try
+            {
+                Puts("GetRoads?");
+                x = RoadFinder.CallHook("GetRoads");
+            }
+            catch
+            {
+                Puts("Hook return was null");
+            }
+            try
+            {
+                var json = JsonConvert.SerializeObject(x);
+                roads = JsonConvert.DeserializeObject<Dictionary<string, Road>>(json);
+            }
+            catch
+            {
+                Puts("json was null");
+            }
         }
 
         private void Unload()
@@ -182,23 +187,82 @@ namespace Oxide.Plugins
             Interface.Oxide.DataFileSystem.WriteObject(Name + "/humanoids", npcs);
         }
 
-        private object OnUserCommand(BasePlayer player, string command, string[] args)
+        protected override void LoadDefaultMessages()
         {
-            if (command != "npc" && isopen.Contains(player.userID))
+            lang.RegisterMessages(new Dictionary<string, string>
             {
-                return true;
-            }
-            return null;
+                ["npcgui"] = "Humanoid GUI",
+                ["npcguisel"] = "HumanoidGUI NPC Select ",
+                ["npcguikit"] = "HumanoidGUI Kit Select",
+                ["close"] = "Close",
+                ["none"] = "None",
+                ["needselect"] = "Select NPC",
+                ["select"] = "Select",
+                ["editing"] = "Editing",
+                ["mustselect"] = "Please press 'Select' to choose an NPC.",
+                ["guihelp1"] = "For blue buttons, click to toggle true/false.",
+                ["guihelp2"] = "For all values above in gray, you may type a new value and press enter.",
+                ["guihelp3"] = "For kit, press the button to select a kit.",
+                ["add"] = "Add",
+                ["new"] = "Create New",
+                ["remove"] = "Remove",
+                ["spawnhere"] = "Spawn Here",
+                ["tpto"] = "Teleport to NPC",
+                ["name"] = "Name",
+                ["online"] = "Online",
+                ["offline"] = "Offline",
+                ["deauthall"] = "DeAuthAll",
+                ["remove"] = "Remove"
+            }, this);
         }
 
-        private object OnPlayerCommand(BasePlayer player, string command, string[] args)
+        private void OnPlayerInput(BasePlayer player, InputState input)
         {
-            if (command != "npc" && isopen.Contains(player.userID))
+            if(player == null || input == null) return;
+            if(input.current.buttons > 0)
+                Puts($"OnPlayerInput: {input.current.buttons}");
+            if(!input.WasJustPressed(BUTTON.USE)) return;
+
+            List<BaseEntity> pls = new List<BaseEntity>();
+            Vis.Entities(player.transform.position, 3f, pls);
+            foreach(var pl in pls)
             {
-                return true;
+                var hp = pl.GetComponentInParent<HumanoidPlayer>();
+                if (hp == null) continue;
+                hp.LookTowards(player.transform.position);
+                Message(player.IPlayer, hp.info.displayName);
             }
-            return null;
         }
+
+        private object CanLootEntity(BasePlayer player, LootableCorpse corpse)
+        {
+            if (player == null || corpse == null) return null;
+            List<BaseEntity> pls = new List<BaseEntity>();
+            Vis.Entities(player.transform.position, 3f, pls);
+            foreach (var pl in pls)
+            {
+                DoLog($"Player {player.displayName}:{player.UserIDString} looting NPC {corpse.name}:{corpse.playerSteamID.ToString()}");
+                var hp = pl.GetComponentInParent<HumanoidPlayer>();
+                if (hp.info.lootable)
+                {
+                    NextTick(player.EndLooting);
+                    return null;
+                }
+            }
+
+            return true;
+        }
+        //private object OnUserCommand(BasePlayer player, string command, string[] args)
+        //{
+        //    if (command != "npc" && isopen.Contains(player.userID)) return true;
+        //    return null;
+        //}
+
+        //private object OnPlayerCommand(BasePlayer player, string command, string[] args)
+        //{
+        //    if (command != "npc" && isopen.Contains(player.userID)) return true;
+        //    return null;
+        //}
         #endregion
 
         #region commands
@@ -321,9 +385,11 @@ namespace Oxide.Plugins
                             npc = npcs[userid];
                             var kitname = args[2];
                             npc.kit = kitname;
-                            if (kitname != null) Kits?.Call($"GiveKit", userid, kitname);
-                            NpcEditGUI(player, userid);
+                            if (kitname != null) Kits?.Call("GiveKit", userid, kitname);
                             SaveData();
+                            var hp = FindHumanPlayerByID(userid);
+                            RespawnNPC(hp.player);
+                            NpcEditGUI(player, userid);
                         }
                         break;
                     case "spawnhere":
@@ -880,11 +946,10 @@ namespace Oxide.Plugins
         }
         public void RespawnNPC(BasePlayer player)
         {
-            HumanoidInfo info;
-            if (player.GetComponentInParent<HumanoidPlayer>() != null)
+            HumanoidInfo info = player.GetComponentInParent<HumanoidInfo>();
+            if (info != null)
             {
                 KillNpc(player);
-                info = player.GetComponentInParent<HumanoidInfo>();
                 SpawnNPC(info);
             }
         }
@@ -895,7 +960,7 @@ namespace Oxide.Plugins
         }
         private void SpawnNPC(HumanoidInfo info)
         {
-            Puts($"Attemping to spawn new humanoid...");
+            Puts($"Attempting to spawn new humanoid...");
             if (info.npcid == 0)
             {
                 info.npcid = (ulong)UnityEngine.Random.Range(0, 2147483647);
@@ -905,11 +970,10 @@ namespace Oxide.Plugins
             Puts($"Player object created...");
             var npc = player.gameObject.AddComponent<HumanoidPlayer>();
             Puts($"Humanoid object added to player...");
-            npc.movement = player.gameObject.AddComponent<NPCMovement>();
+            //npc.movement = player.gameObject.AddComponent<HumanoidMovement>();
             npc.SetInfo(info);
             player.Spawn();
             info.userid = player.userID;
-            //player.displayName = info.displayName;
             UpdateInventory(npc);
             Puts($"Spawned NPCid {info.npcid} with userid {player.UserIDString}");
 
@@ -929,28 +993,21 @@ namespace Oxide.Plugins
             Puts("UpdateInventory called...");
             //if (hp.player.inventory == null) return;
             if (hp.info == null) return;
-            Puts("1");
             hp.player.inventory.DoDestroy();
-            Puts("2");
             hp.player.inventory.ServerInit(hp.player);
-            Puts("3");
             if(hp.info.kit != null)
             {
-                Puts("4");
-                Puts($"Trying to give kit '{hp.info.kit}' to {hp.player.userID}");
-                Kits?.Call("GiveKit", hp.player, hp.info.kit);
-                Puts("5");
+                Puts($"  Trying to give kit '{hp.info.kit}' to {hp.player.userID}");
+                Kits.Call("GiveKit", hp.player, hp.info.kit);
+                RespawnNPC(hp.player);
                 if(hp.EquipFirstInstrument() == null)
                 {
-                    Puts("6");
                     if (hp.EquipFirstWeapon() == null)
                     {
-                        Puts("7");
                         hp.EquipFirstTool();
                     }
                 }
             }
-            Puts("8");
             hp.player.inventory.ServerUpdate(0f);
         }
 
@@ -1080,7 +1137,7 @@ namespace Oxide.Plugins
             }
         }
 
-        public class NPCMovement : MonoBehaviour
+        public class HumanoidMovement : MonoBehaviour
         {
             private HumanoidPlayer npc;
             public Vector3 StartPos = new Vector3(0f, 0f, 0f);
@@ -1102,6 +1159,8 @@ namespace Oxide.Plugins
 
             private float startedReload = 0f;
             private float startedFollow = 0f;
+
+            private Collider collider;
 
             // Logic
             public bool canmove = false;
@@ -1244,7 +1303,7 @@ namespace Oxide.Plugins
                     npc.player.ClientRPCPlayer(null, npc.player, "ForcePositionTo", npc.player.transform.position);
                     mountable.SetFlag(BaseEntity.Flags.Busy, true, false);
                     npc.info.sitting = true;
-                    Interface.Oxide.LogInfo($"Setting instrument for {npc.player.displayName} to {mountable.ShortPrefabName}");
+                    Instance.DoLog($"[HumanoidMovement] Setting instrument for {npc.player.displayName} to {mountable.ShortPrefabName}");
                     npc.info.instrument = mountable.ShortPrefabName;
                     npc.info.ktool = mountable;//.GetParentEntity() as StaticInstrument;
                     break;
@@ -1394,31 +1453,31 @@ namespace Oxide.Plugins
 
             public void FindRoad()
             {
-                //Interface.Oxide.LogDebug("Hello!");
+                //Instance.DoLog("Hello!");
                 // Pick a random monument...
                 System.Random rand = new System.Random();
                 KeyValuePair<string, Vector3> pair = monPos.ElementAt(rand.Next(monPos.Count));
                 npc.info.monstart = pair.Key;
                 // Find closest road start
                 string roadname = null;
-                Interface.Oxide.LogDebug($"Chose monument {npc.info.monstart} at {monPos[npc.info.monstart].ToString()}");
+                Instance.DoLog($"[HumanoidMovement] Chose monument {npc.info.monstart} at {monPos[npc.info.monstart].ToString()}");
                 float distance = 10000f;
                 foreach(KeyValuePair<string, Road> road in roads)
                 {
                     var currdist = Vector3.Distance(monPos[npc.info.monstart], road.Value.points[0]);
                     distance = Math.Min(distance, currdist);
-                    Interface.Oxide.LogDebug($"{road.Key} distance to {npc.info.monstart} == {currdist.ToString()}");
+                    Instance.DoLog($"[HumanoidMovement] {road.Key} distance to {npc.info.monstart} == {currdist.ToString()}");
 
                     if (currdist <= distance)
                     {
                         roadname = road.Key;
-                        Interface.Oxide.LogDebug($"{road.Key} is closest");
+                        Instance.DoLog($"[HumanoidMovement] {road.Key} is closest");
                     }
                 }
                 npc.info.targetloc = roads[roadname].points[0];
                 npc.info.roadname = roadname;
                 npc.info.roadname = "Road 5"; // FIXME
-                Interface.Oxide.LogDebug($"Moving {npc.info.displayName} to monument {npc.info.monstart} to walk road {npc.info.roadname}");
+                Instance.DoLog($"[HumanoidMovement] Moving {npc.info.displayName} to monument {npc.info.monstart} to walk road {npc.info.roadname}");
                 npc.info.moving = true;
                 npc.player.MovePosition(npc.info.targetloc);
                 npc.info.loc = npc.info.targetloc;
@@ -1452,7 +1511,7 @@ namespace Oxide.Plugins
                         //pt.y = newy;
                         pt.y = GetMoveY(pt);
                         npc.LookTowards(pt);
-                        Interface.Oxide.LogDebug($"{npc.info.displayName} walking from {npc.info.monstart} via road {npc.info.roadname} location {pt.ToString()}, speed {npc.info.speed}");
+                        Instance.DoLog($"[HumanoidMovement] {npc.info.displayName} walking from {npc.info.monstart} via road {npc.info.roadname} location {pt.ToString()}, speed {npc.info.speed}");
                         npc.player.MovePosition(pt);
                         var newEyesPos = pt + new Vector3(0, 1.6f, 0);
                         npc.player.eyes.position.Set(newEyesPos.x, newEyesPos.y, newEyesPos.z);
@@ -1475,7 +1534,7 @@ namespace Oxide.Plugins
 //                    else if (curr == roads[npc.info.roadname].points.Count)
 //                    {
 //                        npc.LookTowards(pt);
-//                        Interface.Oxide.LogDebug($"{npc.info.displayName} walking from {npc.info.monstart} via road {npc.info.roadname} location {pt.ToString()}, speed {npc.info.speed}");
+//                        Instance.DoLog($"{npc.info.displayName} walking from {npc.info.monstart} via road {npc.info.roadname} location {pt.ToString()}, speed {npc.info.speed}");
 //                        npc.player.MovePosition(pt);
 //                        var newEyesPos = pt + new Vector3(0, 1.6f, 0);
 //                        npc.player.eyes.position.Set(newEyesPos.x, newEyesPos.y, newEyesPos.z);
@@ -1531,7 +1590,7 @@ namespace Oxide.Plugins
                 {
                     return hitinfo.point.y;
                 }
-                Interface.Oxide.LogDebug($"GetGroundY: {position.y.ToString()}");
+                Instance.DoLog($"[HumanoidMovement] GetGroundY: {position.y.ToString()}");
                 return position.y - .5f;
             }
 
@@ -1676,7 +1735,7 @@ namespace Oxide.Plugins
                             else
                             {
 #if DEBUG
-                                Interface.Oxide.LogInfo("Blocked waypoint? {0} for {1}, speed {2}", pair.Key, npc.player.displayName, pair.Value);
+                                Instance.DoLog($"[HumanoidMovement] Blocked waypoint? {pair.Key} for {npc.player.displayName}, speed {pair.Value.ToString()}");
 #endif
                                 //cachedWaypoints.Add(new WaypointInfo(pair.Key, speed));
                             }
@@ -1695,13 +1754,13 @@ namespace Oxide.Plugins
                         else
                         {
 #if DEBUG
-                            Interface.Oxide.LogInfo("Blocked waypoint to spawn? {0} for {1}", lastPos, npc.player.displayName);
+                            Instance.DoLog($"[HumanoidMovement] Blocked waypoint to spawn? {lastPos} for {npc.player.displayName}");
 #endif
                         }
                     }
                     if(cachedWaypoints.Count <= 0) cachedWaypoints = null;
 #if DEBUG
-                    Interface.Oxide.LogInfo("Waypoints: {0} for {1}", cachedWaypoints.Count, npc.player.displayName);
+                    Instance.DoLog($"[HumanoidMovement] Waypoints: {cachedWaypoints.Count.ToString()} {npc.player.displayName}");
 #endif
                 }
             }
@@ -1710,7 +1769,7 @@ namespace Oxide.Plugins
         public class HumanoidPlayer : MonoBehaviour
         {
             public HumanoidInfo info;
-            public NPCMovement movement;
+            public HumanoidMovement movement;
             public ProtectionProperties protection;
             //public BaseEntity entity;
             public BasePlayer player;
@@ -1722,12 +1781,12 @@ namespace Oxide.Plugins
 
             public void Awake()
             {
-                Interface.Oxide.LogDebug("Getting player object...");
+                Instance.DoLog("[HumanoidPlayer] Getting player object...");
                 //entity = GetComponent<BaseEntity>();
                 player = GetComponent<BasePlayer>();
-                Interface.Oxide.LogDebug("Adding player protection...");
+                Instance.DoLog("[HumanoidPlayer] Adding player protection...");
                 protection = ScriptableObject.CreateInstance<ProtectionProperties>();
-                //Interface.Oxide.LogDebug("Setting player modelState...");
+                //Instance.DoLog("Setting player modelState...");
                 //player.modelState.onground = true;
             }
             public void OnDisable()
@@ -1737,40 +1796,41 @@ namespace Oxide.Plugins
 
             public void SetInfo(HumanoidInfo info, bool update = false)
             {
-                //Interface.Oxide.LogDebug($"SetInfo called for {player.UserIDString}");
+                //Instance.DoLog($"SetInfo called for {player.UserIDString}");
                 this.info = info;
-                Interface.Oxide.LogDebug($"Info var set.");
+                Instance.DoLog("[HumanoidPlayer] Info var set.");
                 if(info == null) return;
                 player.displayName = info.displayName;
                 SetViewAngle(info.rot);
-                Interface.Oxide.LogDebug($"view angle set.");
+                Instance.DoLog("[HumanoidPlayer] view angle set.");
                 player.syncPosition = true;
+                //player.EnablePlayerCollider();
                 if(!update)
                 {
-                    Interface.Oxide.LogDebug($"Not an update...");
+                    Instance.DoLog($"[HumanoidPlayer] Not an update...");
                     //player.xp = ServerMgr.Xp.GetAgent(info.userid);
-                    Interface.Oxide.LogDebug($"  setting stats...");
+                    Instance.DoLog($"[HumanoidPlayer]   setting stats...");
                     player.stats = new PlayerStatistics(player);
-                    Interface.Oxide.LogDebug($"  setting userid...");
+                    Instance.DoLog($"[HumanoidPlayer]   setting userid...");
                     player.userID = info.userid;
-                    Interface.Oxide.LogDebug($"  setting useridstring...");
+                    Instance.DoLog($"[HumanoidPlayer]   setting useridstring...");
                     player.UserIDString = player.userID.ToString();
-                    Interface.Oxide.LogDebug($"  moving...");
+                    Instance.DoLog($"[HumanoidPlayer]   moving...");
                     player.MovePosition(info.loc);
-                    Interface.Oxide.LogDebug($"  setting eyes...");
+                    Instance.DoLog($"[HumanoidPlayer]   setting eyes...");
                     player.eyes = player.eyes ?? player.GetComponent<PlayerEyes>();
                     //player.eyes.position = info.spawnInfo.position + new Vector3(0, 1.6f, 0);
                     var newEyes = info.loc + new Vector3(0, 1.6f, 0);
-                    Interface.Oxide.LogDebug($"  setting eye position...");
+                    Instance.DoLog($"[HumanoidPlayer]   setting eye position...");
                     player.eyes.position.Set(newEyes.x, newEyes.y, newEyes.z);
-                    Interface.Oxide.LogDebug($"  ending sleep...");
+                    Instance.DoLog($"[HumanoidPlayer]   ending sleep...");
                     player.EndSleeping();
                     protection.Clear();
                 }
                 if(movement != null) Destroy(movement);
-                Interface.Oxide.LogDebug($"Adding player movement to {player.displayName}...");
-                movement = player.gameObject.AddComponent<NPCMovement>();
-                Interface.Oxide.LogDebug("Added player movement...");
+                Instance.DoLog($"[HumanoidPlayer] Adding player movement to {player.displayName}...");
+                movement = player.gameObject.AddComponent<HumanoidMovement>();
+                Instance.DoLog("[HumanoidPlayer] Added player movement...");
             }
 
             public void LookTowards(Vector3 pos)
@@ -2295,6 +2355,41 @@ namespace Oxide.Plugins
             monPos.OrderBy(x => x.Key);
             monSize.OrderBy(x => x.Key);
             cavePos.OrderBy(x => x.Key);
+        }
+        #endregion
+
+        #region config
+        protected override void LoadDefaultConfig()
+        {
+            Puts("Creating new config file.");
+            var config = new ConfigData
+            {
+                Version = Version
+            };
+        }
+
+        private void LoadConfigVariables()
+        {
+            configData = Config.ReadObject<ConfigData>();
+
+            configData.Version = Version;
+            SaveConfig(configData);
+        }
+
+        private void SaveConfig(ConfigData config)
+        {
+            Config.WriteObject(config, true);
+        }
+
+        public class ConfigData
+        {
+            public Options Options = new Options();
+            public VersionNumber Version;
+        }
+
+        public class Options
+        {
+            public bool debug = false;
         }
         #endregion
     }
