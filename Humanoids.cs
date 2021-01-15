@@ -40,15 +40,15 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("Humanoids", "RFC1920", "1.0.4")]
+    [Info("Humanoids", "RFC1920", "1.0.5")]
     [Description("Adds interactive NPCs which can be modded by other plugins")]
     class Humanoids : RustPlugin
     {
         #region vars
         [PluginReference]
         private Plugin Kits, RoadFinder;
-
         private static readonly PathFinding PathFinding;
+
         private DynamicConfigFile data;
         private ConfigData configData;
         public static Dictionary<string, AmmoTypes> ammoTypes = new Dictionary<string, AmmoTypes>();
@@ -62,7 +62,6 @@ namespace Oxide.Plugins
         const string NPCGUV = "npc.setval";
 
         public static Humanoids Instance = null;
-        //private Dictionary<ulong, HumanoidPlayer> npcs = new Dictionary<ulong, HumanoidPlayer>();
         private Dictionary<ulong, HumanoidInfo> npcs = new Dictionary<ulong, HumanoidInfo>();
 
         private static Dictionary<string, Road> roads = new Dictionary<string, Road>();
@@ -145,13 +144,10 @@ namespace Oxide.Plugins
 
             try
             {
-                //storedData = data.ReadObject<StoredData>();
-                //DoLog($"Read file with {storedData.Humanoids.Count.ToString()} npcs.");
                 npcs = data.ReadObject<Dictionary<ulong, HumanoidInfo>>();
             }
             catch
             {
-                //storedData = new StoredData();
                 npcs = new Dictionary<ulong, HumanoidInfo>();
             }
             data.Clear();
@@ -159,16 +155,9 @@ namespace Oxide.Plugins
             {
                DoLog($"{pls.Value.npcid.ToString()}");
             }
-            //            foreach(var npc in storedData.Humanoids)
-            //            {
-            //                DoLog($"Loaded npc {npc.userid}");
-            //                npcs[npc.userid] = npc;
-            //            }
         }
         private void SaveData()
         {
-//            if(storedData == null) return;
-            //data.WriteObject(npcs);
             Interface.Oxide.DataFileSystem.WriteObject(Name + "/humanoids", npcs);
         }
 
@@ -470,7 +459,6 @@ namespace Oxide.Plugins
 
         public static Quaternion StringToQuaternion(string sQuaternion)
         {
-            //Interface.Oxide.LogInfo($"Converting {sQuaternion} to Quaternion.");
             // Remove the parentheses
             if(sQuaternion.StartsWith("(") && sQuaternion.EndsWith(")"))
             {
@@ -1275,63 +1263,53 @@ namespace Oxide.Plugins
                 //                }
 
                 //Instance.DoLog($"Determining move based on locomode of {npc.info.locomode.ToString()}");
-                if (npc.info.locomode == LocoMode.Sit)
-                {
-                    npc.info.cansit = true;
-                    npc.info.canride = false;
-                    npc.info.canmove = false;
-                    Sit();
-                }
-                else if (npc.info.locomode == LocoMode.Ride)
-                {
-                    npc.info.cansit = false;
-                    npc.info.canride = true;
-                    npc.info.canmove = true;
-                    Ride();
-                }
 
-                switch(npc.info.canmove)
+                switch (npc.info.locomode)
                 {
-                    case true:
-                        switch (npc.info.locomode)
+                    case LocoMode.Sit:
+                        npc.info.cansit = true;
+                        npc.info.canride = false;
+                        npc.info.canmove = false;
+                        Sit();
+                        break;
+                    case LocoMode.Ride:
+                        npc.info.cansit = false;
+                        npc.info.canride = true;
+                        npc.info.canmove = true;
+                        Ride();
+                        break;
+                    case LocoMode.Follow:
+                        npc.info.cansit = false;
+                        npc.info.canride = false;
+                        npc.info.canmove = true;
+                        break;
+                    case LocoMode.Stand:
+                        npc.info.cansit = false;
+                        npc.info.canride = false;
+                        npc.info.canmove = false;
+                        Stand();
+                        break;
+                    case LocoMode.Road:
+                        npc.info.cansit = false;
+                        npc.info.canride = false;
+                        npc.info.canmove = true;
+                        if (!npc.info.moving)
                         {
-                            case LocoMode.Follow:
-                                npc.info.cansit = false;
-                                npc.info.canride = false;
-                                npc.info.canmove = true;
-                                break;
-                            case LocoMode.Stand:
-                                npc.info.cansit = false;
-                                npc.info.canride = false;
-                                npc.info.canmove = false;
-                                Stand();
-                                break;
-                            case LocoMode.Road:
-                                npc.info.cansit = false;
-                                npc.info.canride = false;
-                                npc.info.canmove = true;
-                                if (!npc.info.moving)
-                                {
-                                    npc.info.moving = true;
-                                    FindRoad();
-                                }
-                                break;
-                            case LocoMode.Monument:
-                                npc.info.cansit = false;
-                                npc.info.canride = false;
-                                npc.info.canmove = true;
-                                Move();
-                                break;
-                            case LocoMode.Default:
-                            default:
-                                npc.info.cansit = false;
-                                npc.info.canride = false;
-                                npc.info.canmove = false;
-                                break;
+                            npc.info.moving = true;
+                            FindRoad();
                         }
-                        return;
-                    case false:
-                        Stop();
+                        break;
+                    case LocoMode.Monument:
+                        npc.info.cansit = false;
+                        npc.info.canride = false;
+                        npc.info.canmove = true;
+                        Move();
+                        break;
+                    case LocoMode.Default:
+                    default:
+                        npc.info.cansit = false;
+                        npc.info.canride = false;
+                        npc.info.canmove = false;
                         break;
                 }
             }
@@ -1589,77 +1567,68 @@ namespace Oxide.Plugins
                 //if (roadname != "") npc.info.roadname = roadname;
                 if(npc.player.IsDead() || npc.player.IsWounded()) StopCoroutine(WalkRoad());
                 //if (player.IsDead() || player.IsWounded()) if (IsInvoking("WalkRoad")) { CancelInvoke("WalkRoad"); }
-                int curr = 0;
+                int curr = -1;
+
+                float tripTime = Vector3.Distance(roads[npc.info.roadname].points.First(), roads[npc.info.roadname].points.Last()) / GetSpeed(npc.info.speed);
+                float steps = roads[npc.info.roadname].points.Count;
+                Instance.DoLog($"Trip time will be {tripTime.ToString()} seconds for {steps.ToString()} road points.");
+
                 Vector3 lastpoint = roads[npc.info.roadname].points.First();
                 Vector3 pt = lastpoint;
-                foreach(var point in roads[npc.info.roadname].points)
+
+                // Work until NPC is at the other end of the road
+                while(npc.info.loc != roads[npc.info.roadname].points.Last())
+                //foreach(var point in roads[npc.info.roadname].points)
                 {
-                    float delay = Vector3.Distance(point, lastpoint) / GetSpeed(npc.info.speed);
-
-                waypointDone = Mathf.InverseLerp(0f, secondsToTake, secondsTaken);
-                nextPos = Vector3.Lerp(StartPos, EndPos, waypointDone);
-
-                    npc.elapsed += Time.deltaTime;
-                    float x = Mathf.InverseLerp(0f, delay, npc.elapsed);
-                    //float x = Mathf.InverseLerp(0f, npc.info.speed, npc.elapsed);
-                    pt = Vector3.Lerp(lastpoint, point, x);
-                    lastpoint = point;
-
-                    if (curr < roads[npc.info.roadname].points.Count)
+                    curr++;
+                    if (curr == steps - 1) break;
+                    Instance.DoLog($"Loop start {curr.ToString()}");
+                    float ptelapsed = 0;
+                    // Discover NEXT point
+                    Vector3 point = roads[npc.info.roadname].points[curr+1];
+                    // Work incrementally to the next point, then increment road point
+                    while (npc.info.loc != point)
                     {
-                        //pt.y = newy;
+                        Instance.DoLog("Loop nav start");
+                        // Update total elapsed time
+                        npc.elapsed += Time.deltaTime;
+                        // Update point to point elapsed time
+                        ptelapsed += Time.deltaTime;
+                        // Discover percentage of completion for the whole trip
+                        float pct = Mathf.InverseLerp(0f, tripTime, npc.elapsed);
+                        // Discover percentage of completion for lastpoint to point
+                        float ptpct = Mathf.InverseLerp(0f, 1f, ptelapsed / 2.5f);// * GetSpeed(npc.info.speed) * 3);
+                        if (ptpct >= 1) break; // Go to next parent while
+                        Instance.DoLog($"Overall pct: {pct.ToString()}, ptp pct: {ptpct.ToString()}");
+                        // Find next point from lastpoint to current target road point
+                        //pt = Vector3.Lerp(npc.info.loc, point, pct);
+                        pt = Vector3.Lerp(lastpoint, point, ptpct);// / steps);
+                        // Fix NPC height based on terrain
                         pt.y = GetMoveY(pt);
-                        npc.LookTowards(pt);
-                        Instance.DoLog($"[HumanoidMovement] {npc.info.displayName} walking from {npc.info.monstart} via road {npc.info.roadname} location {pt.ToString()}, speed {npc.info.speed}");
-                        npc.player.MovePosition(pt);
                         var newEyesPos = pt + new Vector3(0, 1.6f, 0);
+                        // Look at the next point
+                        npc.LookTowards(pt);
+
+                        // Move to next incremental point
+                        npc.player.MovePosition(pt);
                         npc.player.eyes.position.Set(newEyesPos.x, newEyesPos.y, newEyesPos.z);
-                        //npc.player.modelState.onground = true;
-                        //npc.player.transform.localPosition += ((transform.forward * npc.info.speed) * Time.deltaTime);
-                        //entity.transform.position = pt;
-                        //player?.ClientRPCPlayer(null, player, "ForcePositionTo", pt);
-                        //player.SendNetworkUpdate();
-                        npc.info.targetloc = pt;
+
+                        //Instance.DoLog($"Target road point: {point.ToString()} ({curr.ToString()}), next incremental point: {pt.ToString()}, percentage: {ptpct.ToString()}");
+                        //Instance.DoLog($"[HumanoidMovement] {npc.info.displayName} walking from {npc.info.monstart} via road {npc.info.roadname} location {pt.ToString()}, speed {npc.info.speed}");
+
+                        //npc.info.targetloc = pt;
                         npc.info.loc = npc.player.transform.position;
                         npc.info.rot = npc.player.transform.rotation;
-                        curr++;
-                        //yield return Coroutines.WaitForSeconds(GetSpeed(npc.info.speed));
-                        //yield return Coroutines.WaitForSeconds((npc.elapsed/GetSpeed(npc.info.speed)) * 20);
-                        //yield return Coroutines.WaitForSeconds(delay);
-                        //yield return Coroutines.WaitForSeconds(GetSpeed(npc.info.speed)/Time.deltaTime);
-                        //yield return new WaitForEndOfFrame();
+                        Instance.DoLog($"Setting lastpoint to {pt.ToString()} (was {lastpoint.ToString()})");
+                        lastpoint = pt;
+                        //yield return null;
                         yield return new WaitForFixedUpdate();
                     }
-//                    else if (curr == roads[npc.info.roadname].points.Count)
-//                    {
-//                        npc.LookTowards(pt);
-//                        Instance.DoLog($"{npc.info.displayName} walking from {npc.info.monstart} via road {npc.info.roadname} location {pt.ToString()}, speed {npc.info.speed}");
-//                        npc.player.MovePosition(pt);
-//                        var newEyesPos = pt + new Vector3(0, 1.6f, 0);
-//                        npc.player.eyes.position.Set(newEyesPos.x, newEyesPos.y, newEyesPos.z);
-//                        //npc.player.modelState.onground = true;
-//                        //npc.player.transform.localPosition += ((transform.forward * npc.info.speed) * Time.deltaTime);
-//                        //entity.transform.position = pt;
-//                        //player?.ClientRPCPlayer(null, player, "ForcePositionTo", pt);
-//                        //player.SendNetworkUpdate();
-//                        npc.info.targetloc = pt;
-//                        npc.info.loc = npc.player.transform.position;
-//                        npc.info.rot = npc.player.transform.rotation;
-//                        curr++;
-//                        //yield return Coroutines.WaitForSeconds(GetSpeed(npc.info.speed));
-//                        yield return Coroutines.WaitForSeconds(Time.deltaTime/GetSpeed(npc.info.speed));
-//                        //yield return Coroutines.WaitForSeconds(GetSpeed(npc.info.speed)/Time.deltaTime);
-//                        //yield return new WaitForEndOfFrame();
-//                    }
-                    else
-                    {
-                        Stop();
-                        StopCoroutine(WalkRoad());
-                        npc.elapsed = 0;
-                        //if(IsInvoking("WalkRoad")) CancelInvoke("WalkRoad");
-                    }
-                    lastpoint = point;
                 }
+                Stop();
+                StopCoroutine(WalkRoad());
+                npc.elapsed = 0;
+                //if(IsInvoking("WalkRoad")) CancelInvoke("WalkRoad");
             }
 
             public float GetMoveY(Vector3 position)
