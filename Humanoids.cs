@@ -36,18 +36,17 @@ using System.Globalization;
 using System.Linq;
 using System.Text.RegularExpressions;
 using UnityEngine;
-// Requires: PathFinding
 
 namespace Oxide.Plugins
 {
-    [Info("Humanoids", "RFC1920", "1.0.5")]
+    [Info("Humanoids", "RFC1920", "1.0.6")]
     [Description("Adds interactive NPCs which can be modded by other plugins")]
     class Humanoids : RustPlugin
     {
         #region vars
         [PluginReference]
         private Plugin Kits, RoadFinder;
-        private static readonly PathFinding PathFinding;
+//        private static readonly PathFinding PathFinding;
 
         private DynamicConfigFile data;
         private ConfigData configData;
@@ -113,16 +112,25 @@ namespace Oxide.Plugins
             roads = JsonConvert.DeserializeObject<Dictionary<string, Road>>(json);
         }
 
+        void OnNewSave()
+        {
+            if (!configData.Options.zeroOnWipe) return;
+            var HumanoidObjs = Resources.FindObjectsOfTypeAll<HumanoidPlayer>();
+            foreach (var obj in HumanoidObjs)
+            {
+                obj.info.loc = Vector3.zero;
+            }
+        }
+
         private void Unload()
         {
             ServerMgr.Instance.StopAllCoroutines();
             var HumanoidObjs = Resources.FindObjectsOfTypeAll<HumanoidPlayer>();
             foreach(var obj in HumanoidObjs)
             {
-                PrintWarning($"Deleting {obj.info.displayName}:{obj.info.npcid}");
+                DoLog($"Deleting {obj.info.displayName}:{obj.info.npcid}");
                 obj.info.moving = false;
                 obj.player.Kill();
-                //obj.GetComponent<BasePlayer>().Kill();
             }
             foreach (var player in BasePlayer.activePlayerList)
             {
@@ -197,12 +205,12 @@ namespace Oxide.Plugins
 //                DoLog($"OnPlayerInput: {input.current.buttons}");
             if(!input.WasJustPressed(BUTTON.USE)) return;
 
-            List<BaseEntity> pls = new List<BaseEntity>();
-            Vis.Entities(player.transform.position, 3f, pls);
-            foreach(var pl in pls)
+            RaycastHit hit;
+            if (Physics.Raycast(player.eyes.HeadRay(), out hit, 3f, playerMask))
             {
+                var pl = hit.GetEntity().ToPlayer();
                 var hp = pl.GetComponentInParent<HumanoidPlayer>();
-                if (hp == null) continue;
+                if (hp == null) return;
                 try
                 {
                     if (hp.info.sitting) hp.movement.Stand();
@@ -301,12 +309,10 @@ namespace Oxide.Plugins
                             else
                             {
                                 DoLog("Looking for npc...");
-                                List<BasePlayer> pls = new List<BasePlayer>();
-                                Vis.Entities(player.transform.position, 2f, pls);
-                                foreach (var pl in pls)
+                                RaycastHit hit;
+                                if (Physics.Raycast(player.eyes.HeadRay(), out hit, 3f, playerMask))
                                 {
-                                    DoLog($"Checking player {pl.userID}");
-                                    if (pl.userID == player.userID) continue;
+                                    var pl = hit.GetEntity().ToPlayer();
                                     foreach (KeyValuePair<ulong, HumanoidInfo> Npc in npcs)
                                     {
                                         if (Npc.Value.userid == pl.userID)
@@ -341,10 +347,10 @@ namespace Oxide.Plugins
                             }
                             else
                             {
-                                List<BasePlayer> pls = new List<BasePlayer>();
-                                Vis.Entities(player.transform.position, 1f, pls);
-                                foreach (var pl in pls)
+                                RaycastHit hit;
+                                if (Physics.Raycast(player.eyes.HeadRay(), out hit, 3f, playerMask))
                                 {
+                                    var pl = hit.GetEntity().ToPlayer();
                                     if (pl.userID > 0)
                                     {
                                         var isnpc = npcs[pl.userID];
@@ -1204,13 +1210,15 @@ namespace Oxide.Plugins
         public class HumanoidMovement : MonoBehaviour
         {
             private HumanoidPlayer npc;
+            public List<Vector3> Paths = new List<Vector3>();
             public Vector3 StartPos = new Vector3(0f, 0f, 0f);
             public Vector3 EndPos = new Vector3(0f, 0f, 0f);
-            public Vector3 LastPos = new Vector3(0f, 0f, 0f);
-            private Vector3 nextPos = new Vector3(0f, 0f, 0f);
+            public Vector3 lastPos = new Vector3(0f, 0f, 0f);
+            public Vector3 nextPos = new Vector3(0f, 0f, 0f);
+            private Vector3 currPos = new Vector3(0f, 0f, 0f);
             private float waypointDone = 0f;
-            public float secondsTaken = 0f;
-            private float secondsToTake = 0f;
+            public float elapsedTime = 0f;
+            private float tripTime = 0f;
 
             public List<WaypointInfo> cachedWaypoints;
             private int currentWaypoint = -1;
@@ -1245,6 +1253,7 @@ namespace Oxide.Plugins
             public void FixedUpdate()
             {
                 DetermineMove();
+                Move();
             }
             public void DetermineMove()
             {
@@ -1303,7 +1312,6 @@ namespace Oxide.Plugins
                         npc.info.cansit = false;
                         npc.info.canride = false;
                         npc.info.canmove = true;
-                        Move();
                         break;
                     case LocoMode.Default:
                     default:
@@ -1312,6 +1320,83 @@ namespace Oxide.Plugins
                         npc.info.canmove = false;
                         break;
                 }
+            }
+
+            public void Move()
+            {
+                if (elapsedTime == 0f) FindNextWaypoint();
+                Execute_Move();
+                if (waypointDone >= 1f) elapsedTime = 0f;
+            }
+
+            private void Execute_Move()
+            {
+//                currentWaypoint++;
+                //if (currentWaypoint > Paths.Count) return;
+                // Walking effect good, but doesn't track waypoints.  It just hits a straight line.
+                if (currentWaypoint > cachedWaypoints.Count) currentWaypoint = 0;
+                if (StartPos == EndPos) return;
+                elapsedTime += Time.deltaTime;
+                waypointDone = Mathf.InverseLerp(0f, tripTime, elapsedTime);
+                currPos = Vector3.Lerp(StartPos, EndPos, waypointDone);
+                currPos.y = GetMoveY(currPos);
+                //entity.transform.position = currPos;
+                npc.player.transform.position = currPos;
+                npc.info.loc = currPos;
+                Instance.DoLog($"Execute_Move from {StartPos.ToString()} to {EndPos.ToString()} within {tripTime.ToString()}s\n\tcurrent: {npc.player.transform.position.ToString()}, next: {currPos.ToString()}, elapsed: {elapsedTime.ToString()} ");
+//                npc.player.ClientRPCPlayer(null, npc.player, "ForcePositionTo", currPos);
+                npc.LookTowards(EndPos);
+                npc.player.MovePosition(currPos);
+                //npc.player.SendNetworkUpdate();
+                var newEyesPos = currPos + new Vector3(0, 1.6f, 0);
+                npc.player.eyes.position.Set(newEyesPos.x, newEyesPos.y, newEyesPos.z);
+                npc.player.EnablePlayerCollider();
+
+                npc.player.modelState.onground = !IsSwimming();
+
+                currentWaypoint++;
+            }
+
+            private void FindNextWaypoint()
+            {
+                if (Paths.Count == 0)
+                {
+                    StartPos = EndPos = Vector3.zero;
+                    enabled = false;
+                    return;
+                }
+                //SetMovementPoint(Paths[0], 4f);
+            }
+
+            public void SetMovementPoint(Vector3 endpos, float s)
+            {
+                StartPos = npc.player.transform.position;
+                if (endpos != StartPos)
+                {
+                    EndPos = endpos;
+                    tripTime = Vector3.Distance(EndPos, StartPos)/s;
+                    npc.player.transform.rotation = Quaternion.LookRotation(EndPos - StartPos);
+                    if (npc.player != null) SetViewAngle(npc.player, npc.player.transform.rotation);
+                    elapsedTime = 0f;
+                    waypointDone = 0f;
+                }
+                Paths.RemoveAt(0);
+            }
+
+            private void SetViewAngle(BasePlayer player, Quaternion ViewAngles)
+            {
+                player.viewAngles = ViewAngles.eulerAngles;
+                player.SendNetworkUpdate();
+            }
+
+            public void Enable()
+            {
+                //if(GetSpeed() <= 0) return;
+                enabled = true;
+            }
+            public void Disable()
+            {
+                enabled = false;
             }
 
             public bool IsSitting()
@@ -1508,6 +1593,30 @@ namespace Oxide.Plugins
                 horse.RiderInput(new InputState() { current = message }, npc.player);
             }
 
+            public void UpdateWaypoints()
+            {
+                if(string.IsNullOrEmpty(npc.info.waypoint)) return;
+                var cwaypoints = Interface.Oxide.CallHook("GetWaypointsList", npc.info.waypoint);
+                if(cwaypoints == null) cachedWaypoints = null;
+                else
+                {
+                    cachedWaypoints = new List<WaypointInfo>();
+                    var lastPos = npc.info.loc;
+                    var speed = GetSpeed();
+                    foreach(var cwaypoint in (List<object>)cwaypoints)
+                    {
+                        foreach(var pair in (Dictionary<Vector3, float>)cwaypoint)
+                        {
+                            cachedWaypoints.Add(new WaypointInfo(pair.Key, pair.Value));
+                        }
+                    }
+
+                    if(cachedWaypoints.Count <= 0) cachedWaypoints = null;
+
+                    Instance.DoLog($"[HumanoidMovement] Waypoints: {cachedWaypoints.Count.ToString()} {npc.player.displayName}");
+                }
+            }
+
             public List<Item> GetAmmo(Item item)
             {
                 var ammos = new List<Item>();
@@ -1517,20 +1626,23 @@ namespace Oxide.Plugins
                 return ammos;
             }
 
-
             private float GetSpeed(float speed = -1)
             {
                 if(npc.info.sitting) speed = 0;
 //                if(returning) speed = 7;
                 else if(speed == -1) speed = npc.info.speed;
-//                if(IsSwimming()) speed = speed / 2f;
+                if(IsSwimming()) speed = speed / 2f;
 
                 return speed;
             }
 
+            private bool IsSwimming()
+            {
+                return WaterLevel.Test(npc.player.transform.position + new Vector3(0, 0.65f, 0));
+            }
+
             public void FindRoad()
             {
-                //Instance.DoLog("Hello!");
                 // Pick a random monument...
                 System.Random rand = new System.Random();
                 KeyValuePair<string, Vector3> pair = monPos.ElementAt(rand.Next(monPos.Count));
@@ -1551,84 +1663,29 @@ namespace Oxide.Plugins
                         Instance.DoLog($"[HumanoidMovement] {road.Key} is closest");
                     }
                 }
+
+                roadname = "Road 5"; // TESTING
                 npc.info.targetloc = roads[roadname].points[0];
+                npc.info.loc = npc.info.targetloc;
                 npc.info.roadname = roadname;
-                npc.info.roadname = "Road 5"; // FIXME
                 Instance.DoLog($"[HumanoidMovement] Moving {npc.info.displayName} to monument {npc.info.monstart} to walk road {npc.info.roadname}");
                 npc.info.moving = true;
-                npc.player.MovePosition(npc.info.targetloc);
-                npc.info.loc = npc.info.targetloc;
-                ServerMgr.Instance.StartCoroutine(WalkRoad());
-                //Invoke("WalkRoad", GetSpeed(info.speed));
-            }
 
-            private IEnumerator WalkRoad()
-            {
-                //if (roadname != "") npc.info.roadname = roadname;
-                if(npc.player.IsDead() || npc.player.IsWounded()) StopCoroutine(WalkRoad());
-                //if (player.IsDead() || player.IsWounded()) if (IsInvoking("WalkRoad")) { CancelInvoke("WalkRoad"); }
-                int curr = -1;
+                //npc.player.MovePosition(npc.info.targetloc);
 
-                float tripTime = Vector3.Distance(roads[npc.info.roadname].points.First(), roads[npc.info.roadname].points.Last()) / GetSpeed(npc.info.speed);
-                float steps = roads[npc.info.roadname].points.Count;
-                Instance.DoLog($"Trip time will be {tripTime.ToString()} seconds for {steps.ToString()} road points.");
-
-                Vector3 lastpoint = roads[npc.info.roadname].points.First();
-                Vector3 pt = lastpoint;
-
-                // Work until NPC is at the other end of the road
-                while(npc.info.loc != roads[npc.info.roadname].points.Last())
-                //foreach(var point in roads[npc.info.roadname].points)
+                // Setup road points as waypoints
+                cachedWaypoints = new List<WaypointInfo>();
+                foreach (var road in roads[roadname].points)
                 {
-                    curr++;
-                    if (curr == steps - 1) break;
-                    Instance.DoLog($"Loop start {curr.ToString()}");
-                    float ptelapsed = 0;
-                    // Discover NEXT point
-                    Vector3 point = roads[npc.info.roadname].points[curr+1];
-                    // Work incrementally to the next point, then increment road point
-                    while (npc.info.loc != point)
-                    {
-                        Instance.DoLog("Loop nav start");
-                        // Update total elapsed time
-                        npc.elapsed += Time.deltaTime;
-                        // Update point to point elapsed time
-                        ptelapsed += Time.deltaTime;
-                        // Discover percentage of completion for the whole trip
-                        float pct = Mathf.InverseLerp(0f, tripTime, npc.elapsed);
-                        // Discover percentage of completion for lastpoint to point
-                        float ptpct = Mathf.InverseLerp(0f, 1f, ptelapsed / 2.5f);// * GetSpeed(npc.info.speed) * 3);
-                        if (ptpct >= 1) break; // Go to next parent while
-                        Instance.DoLog($"Overall pct: {pct.ToString()}, ptp pct: {ptpct.ToString()}");
-                        // Find next point from lastpoint to current target road point
-                        //pt = Vector3.Lerp(npc.info.loc, point, pct);
-                        pt = Vector3.Lerp(lastpoint, point, ptpct);// / steps);
-                        // Fix NPC height based on terrain
-                        pt.y = GetMoveY(pt);
-                        var newEyesPos = pt + new Vector3(0, 1.6f, 0);
-                        // Look at the next point
-                        npc.LookTowards(pt);
-
-                        // Move to next incremental point
-                        npc.player.MovePosition(pt);
-                        npc.player.eyes.position.Set(newEyesPos.x, newEyesPos.y, newEyesPos.z);
-
-                        //Instance.DoLog($"Target road point: {point.ToString()} ({curr.ToString()}), next incremental point: {pt.ToString()}, percentage: {ptpct.ToString()}");
-                        //Instance.DoLog($"[HumanoidMovement] {npc.info.displayName} walking from {npc.info.monstart} via road {npc.info.roadname} location {pt.ToString()}, speed {npc.info.speed}");
-
-                        //npc.info.targetloc = pt;
-                        npc.info.loc = npc.player.transform.position;
-                        npc.info.rot = npc.player.transform.rotation;
-                        Instance.DoLog($"Setting lastpoint to {pt.ToString()} (was {lastpoint.ToString()})");
-                        lastpoint = pt;
-                        //yield return null;
-                        yield return new WaitForFixedUpdate();
-                    }
+                    cachedWaypoints.Add(new WaypointInfo(road, npc.info.speed));
                 }
-                Stop();
-                StopCoroutine(WalkRoad());
-                npc.elapsed = 0;
-                //if(IsInvoking("WalkRoad")) CancelInvoke("WalkRoad");
+                Paths = roads[npc.info.roadname].points;
+                StartPos = Paths.First();
+                EndPos = Paths.Last();
+                tripTime = Vector3.Distance(StartPos, EndPos) / GetSpeed(npc.info.speed);
+                enabled = true;
+
+                //ServerMgr.Instance.StartCoroutine(WalkRoad());
             }
 
             public float GetMoveY(Vector3 position)
@@ -1660,34 +1717,6 @@ namespace Oxide.Plugins
                 }
                 Instance.DoLog($"[HumanoidMovement] GetGroundY: {position.y.ToString()}");
                 return position.y - .5f;
-            }
-
-
-            public void Move()
-            {
-                npc.info.loc = npc.player.transform.position;
-                npc.info.rot = npc.player.transform.rotation;
-                if (npc.info.targetloc != Vector3.zero && npc.info.loc != npc.info.targetloc && !npc.info.moving)
-                {
-                    var done = PathFinding?.Call("FindAndFollowPath", npc.player as BaseEntity, npc.info.loc, npc.info.targetloc);
-                    npc.info.moving = true;
-                }
-                else if (npc.info.targetloc != Vector3.zero) // ???
-                {
-                    // Pick a random monument...
-                    System.Random rand = new System.Random();
-                    KeyValuePair<string, Vector3> pair = monPos.ElementAt(rand.Next(monPos.Count));
-                    npc.info.targetloc = pair.Value;
-                    var done = PathFinding?.Call("FindAndFollowPath", npc.player as BaseEntity, npc.info.loc, npc.info.targetloc);
-                    npc.info.moving = true;
-                }
-                if (npc.info.hostile) FindVictim();
-
-                //foreach (PathList paths in FindObjectsOfType<PathList>())
-                //foreach (MonumentInfo monument in UnityEngine.Object.FindObjectsOfType<MonumentInfo>())
-                //foreach (InfrastructureType roads in UnityEngine.Object.FindObjectsOfType<InfrastructureType>())
-                //var x = TerrainPath
-                //var x = TerrainPathConnect.FindObjectsOfType()
             }
 
             public void FindVictim()
@@ -1770,68 +1799,6 @@ namespace Oxide.Plugins
                 }
                 return false;
             }
-
-            public void UpdateWaypoints()
-            {
-                if(string.IsNullOrEmpty(npc.info.waypoint)) return;
-                var cwaypoints = Interface.Oxide.CallHook("GetWaypointsList", npc.info.waypoint);
-                if(cwaypoints == null) cachedWaypoints = null;
-                else
-                {
-                    cachedWaypoints = new List<WaypointInfo>();
-                    var lastPos = npc.info.loc;
-                    var speed = GetSpeed();
-                    foreach(var cwaypoint in (List<object>)cwaypoints)
-                    {
-                        foreach(var pair in (Dictionary<Vector3, float>)cwaypoint)
-                        {
-                            if(PathFinding == null)
-                            {
-                                cachedWaypoints.Add(new WaypointInfo(pair.Key, pair.Value));
-                                continue;
-                            }
-                            var temppathFinding = PathFinding.Go(lastPos, pair.Key);
-                            speed = pair.Value;
-                            if(temppathFinding != null)
-                            {
-                                lastPos = pair.Key;
-                                foreach(var vector3 in temppathFinding)
-                                {
-                                    cachedWaypoints.Add(new WaypointInfo(vector3, speed));
-                                }
-                            }
-                            else
-                            {
-#if DEBUG
-                                Instance.DoLog($"[HumanoidMovement] Blocked waypoint? {pair.Key} for {npc.player.displayName}, speed {pair.Value.ToString()}");
-#endif
-                                //cachedWaypoints.Add(new WaypointInfo(pair.Key, speed));
-                            }
-                        }
-                    }
-                    if(PathFinding != null && lastPos != npc.info.loc)
-                    {
-                        var temppathFinding = PathFinding.Go(lastPos, npc.info.loc);
-                        if(temppathFinding != null)
-                        {
-                            foreach(var vector3 in temppathFinding)
-                            {
-                                cachedWaypoints.Add(new WaypointInfo(vector3, speed));
-                            }
-                        }
-                        else
-                        {
-#if DEBUG
-                            Instance.DoLog($"[HumanoidMovement] Blocked waypoint to spawn? {lastPos} for {npc.player.displayName}");
-#endif
-                        }
-                    }
-                    if(cachedWaypoints.Count <= 0) cachedWaypoints = null;
-#if DEBUG
-                    Instance.DoLog($"[HumanoidMovement] Waypoints: {cachedWaypoints.Count.ToString()} {npc.player.displayName}");
-#endif
-                }
-            }
         }
 
         public class HumanoidPlayer : MonoBehaviour
@@ -1841,9 +1808,6 @@ namespace Oxide.Plugins
             public ProtectionProperties protection;
             //public BaseEntity entity;
             public BasePlayer player;
-
-            public float elapsed = 0f;
-            private float delay = 0f;
 
             public BaseCombatEntity target;
 
@@ -1901,6 +1865,7 @@ namespace Oxide.Plugins
                 if(movement != null) Destroy(movement);
                 Instance.DoLog($"[HumanoidPlayer] Adding player movement to {player.displayName}...");
                 movement = player.gameObject.AddComponent<HumanoidMovement>();
+                //pathfollower = player.gameObject.AddComponent<PathFollower>();
             }
 
             public void LookTowards(Vector3 pos)
@@ -2461,6 +2426,7 @@ namespace Oxide.Plugins
         public class Options
         {
             public bool debug = false;
+            public bool zeroOnWipe = true;
         }
         #endregion
     }
