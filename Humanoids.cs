@@ -178,8 +178,10 @@ namespace Oxide.Plugins
         }
         private void SaveData()
         {
-            //Interface.Oxide.DataFileSystem.WriteObject(Name + "/humanoids", npcs);
-            data.WriteObject(npcs);
+            Interface.Oxide.DataFileSystem.WriteObject(Name + "/humanoids", npcs);
+            //Puts("SAVE DATA START");
+            //data.WriteObject(npcs);
+            //Puts("SAVE DATA END");
         }
 
         protected override void LoadDefaultMessages()
@@ -872,7 +874,7 @@ namespace Oxide.Plugins
                 };
                 Dictionary<string, bool> isBool = new Dictionary<string, bool>
                 {
-                    { "enabled", true },
+                    { "enable", true },
                     { "invulnerable", true },
                     { "lootable", true },
                     { "hostile", true },
@@ -1022,10 +1024,9 @@ namespace Oxide.Plugins
             int col = 0;
             int row = 0;
 
-            var kits = Interface.Oxide.DataFileSystem.GetFile("Kits");
-            kits.Settings.NullValueHandling = NullValueHandling.Ignore;
-            KitsStoredData storedData = kits.ReadObject<KitsStoredData>();
-            foreach(var kitinfo in storedData.Kits)
+            List<string> kits = new List<string>();
+            Kits?.CallHook("GetKitNames", kits);
+            foreach(var kitinfo in kits)
             {
                 if(row > 10)
                 {
@@ -1035,13 +1036,13 @@ namespace Oxide.Plugins
                 float[] posb = GetButtonPositionP(row, col);
 
                 if(kit == null) kit = Lang("none");
-                if(kitinfo.Key == kit)
+                if(kitinfo == kit)
                 {
-                    UI.Button(ref container, NPCGUK, UI.Color("#d85540", 1f), kitinfo.Key, 12, $"{posb[0]} {posb[1]}", $"{posb[0] + ((posb[2] - posb[0]) / 2)} {posb[3]}", $"npc kitsel {npc.ToString()} {kitinfo.Key}");
+                    UI.Button(ref container, NPCGUK, UI.Color("#d85540", 1f), kitinfo, 12, $"{posb[0]} {posb[1]}", $"{posb[0] + ((posb[2] - posb[0]) / 2)} {posb[3]}", $"npc kitsel {npc.ToString()} {kitinfo}");
                 }
                 else
                 {
-                    UI.Button(ref container, NPCGUK, UI.Color("#424242", 1f), kitinfo.Key, 12, $"{posb[0]} {posb[1]}", $"{posb[0] + ((posb[2] - posb[0]) / 2)} {posb[3]}", $"npc kitsel {npc.ToString()} {kitinfo.Key}");
+                    UI.Button(ref container, NPCGUK, UI.Color("#424242", 1f), kitinfo, 12, $"{posb[0]} {posb[1]}", $"{posb[0] + ((posb[2] - posb[0]) / 2)} {posb[3]}", $"npc kitsel {npc.ToString()} {kitinfo}");
                 }
                 row++;
             }
@@ -1254,6 +1255,7 @@ namespace Oxide.Plugins
             var npc = player.gameObject.AddComponent<HumanoidPlayer>();
             DoLog($"Humanoid object added to player...");
             npc.SetInfo(info);
+
             player.Spawn();
 
             info.userid = player.userID;
@@ -1263,6 +1265,7 @@ namespace Oxide.Plugins
                 player.transform.position = info.loc;
             }
             UpdateInventory(npc);
+
             DoLog($"Spawned NPCid {info.npcid} with userid {player.UserIDString}");
 
             if (npcs.ContainsKey(info.npcid))
@@ -1283,17 +1286,27 @@ namespace Oxide.Plugins
             if (hp.info == null) return;
             hp.player.inventory.DoDestroy();
             hp.player.inventory.ServerInit(hp.player);
-            if(!string.IsNullOrEmpty(hp.info.kit))
+
+            if (!string.IsNullOrEmpty(hp.info.kit))
             {
                 DoLog($"  Trying to give kit '{hp.info.kit}' to {hp.player.userID}");
                 Kits?.Call("GiveKit", hp.player, hp.info.kit);
 
-                if(hp.EquipFirstInstrument() == null)
+                if (hp.EquipFirstInstrument() == null)
                 {
                     if (hp.EquipFirstWeapon() == null)
                     {
                         hp.EquipFirstTool();
                     }
+                }
+            }
+            hp.player.SV_ClothingChanged();
+            if (hp.info.protections != null)
+            {
+                hp.player.baseProtection.Clear();
+                foreach (var protection in hp.info.protections)
+                {
+                    hp.player.baseProtection.Add(protection.Key, protection.Value);
                 }
             }
             hp.player.inventory.ServerUpdate(0f);
@@ -1322,7 +1335,7 @@ namespace Oxide.Plugins
             public Timer pausetimer;
 
             // Logic
-            public bool enabled = true;
+            public bool enable = true;
             public bool canmove = false;
             public bool cansit = false;
             public bool canride = false;
@@ -1353,10 +1366,6 @@ namespace Oxide.Plugins
             public LocoMode locomode;
             public string waypoint;
 
-            // Music
-            public InstrumentTool itool;
-            public StaticInstrument ktool;
-            public string instrument;
             public int band = 0;
 
             public HumanoidInfo(ulong uid, Vector3 position, Quaternion rotation)
@@ -1381,7 +1390,7 @@ namespace Oxide.Plugins
                 speed = 3;
                 //stopandtalk = true;
                 //stopandtalkSeconds = 3;
-                enabled = true;
+                enable = true;
                 //persistent = true;
                 lootable = true;
                 entrypause = true;
@@ -1502,7 +1511,7 @@ namespace Oxide.Plugins
                         currentWaypoint = 0;
                     }
 //                    StartPos = EndPos = Vector3.zero;
-//                    enabled = false;
+//                    enable = false;
 //                    return;
                 }
 
@@ -1530,7 +1539,7 @@ namespace Oxide.Plugins
             private void Execute_Move()
             {
                 if (!npc.info.canmove) return;
-                if (!enabled) return;
+                if (!npc.info.enable) return;
 
                 currPos = Vector3.Lerp(StartPos, EndPos, waypointDone);
                 //currPos.y = GetMoveY(currPos); // Adjust for terrain height
@@ -1578,11 +1587,11 @@ namespace Oxide.Plugins
             public void Enable()
             {
                 //if(GetSpeed() <= 0) return;
-                enabled = true;
+                npc.info.enable = true;
             }
             public void Disable()
             {
-                enabled = false;
+                npc.info.enable = false;
             }
 
             public bool IsSitting()
@@ -1658,8 +1667,8 @@ namespace Oxide.Plugins
                     mountable.SetFlag(BaseEntity.Flags.Busy, true, false);
                     sitting = true;
                     Instance.DoLog($"[HumanoidMovement] Setting instrument for {npc.player.displayName} to {mountable.ShortPrefabName}");
-                    npc.info.instrument = mountable.ShortPrefabName;
-                    npc.info.ktool = mountable;//.GetParentEntity() as StaticInstrument;
+                    npc.instrument = mountable.ShortPrefabName;
+                    npc.ktool = mountable;//.GetParentEntity() as StaticInstrument;
                     break;
                 }
             }
@@ -1916,8 +1925,7 @@ namespace Oxide.Plugins
                 StartPos = Paths.First();
                 EndPos = Paths[1];
                 tripTime = Vector3.Distance(StartPos, EndPos) / GetSpeed(npc.info.speed);
-                enabled = true;
-
+                npc.info.enable = true;
             }
 
             public float GetMoveY(Vector3 position)
@@ -2112,6 +2120,11 @@ namespace Oxide.Plugins
 
             public BaseCombatEntity target;
 
+            // Music
+            public InstrumentTool itool;
+            public StaticInstrument ktool;
+            public string instrument;
+
             public void Awake()
             {
                 Instance.DoLog("[HumanoidPlayer] Getting player object...");
@@ -2126,8 +2139,8 @@ namespace Oxide.Plugins
             {
                 //StopAllCoroutines();
                 player = null;
-                info.itool = null;
-                info.ktool = null;
+                itool = null;
+                ktool = null;
             }
 
             public void SetInfo(HumanoidInfo info, bool update = false)
@@ -2141,7 +2154,7 @@ namespace Oxide.Plugins
                 Instance.DoLog("[HumanoidPlayer] view angle set.");
                 player.syncPosition = true;
                 //player.EnablePlayerCollider();
-                if(!update)
+                if (!update)
                 {
                     Instance.DoLog($"[HumanoidPlayer] Not an update...");
                     //player.xp = ServerMgr.Xp.GetAgent(info.userid);
@@ -2227,10 +2240,10 @@ namespace Oxide.Plugins
 
             public void UnequipAll()
             {
-                if(player.inventory?.containerBelt == null) return;
-                foreach(Item item in player.inventory.containerBelt.itemList)
+                if (player.inventory?.containerBelt == null) return;
+                foreach (Item item in player.inventory.containerBelt.itemList)
                 {
-                    if(item.CanBeHeld())
+                    if (item.CanBeHeld())
                     {
                         (item.GetHeldEntity() as HeldEntity)?.SetHeld(false);
                     }
@@ -2277,7 +2290,7 @@ namespace Oxide.Plugins
             public HeldEntity EquipFirstInstrument()
             {
                 HeldEntity instr = GetFirstInstrument();
-                if(instr != null)
+                if (instr != null)
                 {
                     UnequipAll();
                     instr.SetOwnerPlayer(player);
@@ -2286,48 +2299,48 @@ namespace Oxide.Plugins
                     instr.UpdateHeldItemVisibility();
                     var item = instr.GetItem();
                     SetActive(item.uid);
-                    info.itool = instr as InstrumentTool;
-                    info.instrument = instr.ShortPrefabName;
+                    itool = instr as InstrumentTool; // THIS ONE!
+                    instrument = instr.ShortPrefabName;
                 }
                 return instr;
             }
 
             public void PlayNote(int note, int sharp, int octave, float noteval, float duration = 0.2f)
             {
-                switch (info.instrument)
+                switch (instrument)
                 {
                     case "drumkit.deployed.static":
                     case "drumkit.deployed":
                     case "xylophone.deployed":
-                        if (info.ktool != null)
+                        if (ktool != null)
                         {
-                            info.ktool.ClientRPC<int, int, int, float>(null, "Client_PlayNote", note, sharp, octave, noteval);
+                            ktool.ClientRPC<int, int, int, float>(null, "Client_PlayNote", note, sharp, octave, noteval);
                         }
                         break;
                     case "cowbell.deployed":
-                        if (info.ktool != null)
+                        if (ktool != null)
                         {
-                            info.ktool.ClientRPC<int, int, int, float>(null, "Client_PlayNote", 2, 0, 0, 1);
+                            ktool.ClientRPC<int, int, int, float>(null, "Client_PlayNote", 2, 0, 0, 1);
                         }
                         break;
                     case "piano.deployed.static":
                     case "piano.deployed":
-                        if (info.ktool != null)
+                        if (ktool != null)
                         {
-                            info.ktool.ClientRPC<int, int, int, float>(null, "Client_PlayNote", note, sharp, octave, noteval);
+                            ktool.ClientRPC<int, int, int, float>(null, "Client_PlayNote", note, sharp, octave, noteval);
                             Instance.timer.Once(duration, () =>
                             {
-                                info.ktool.ClientRPC<int, int, int, float>(null, "Client_StopNote", note, sharp, octave, noteval);
+                                ktool.ClientRPC<int, int, int, float>(null, "Client_StopNote", note, sharp, octave, noteval);
                             });
                         }
                         break;
                     default:
-                        if (info.itool != null)
+                        if (itool != null)
                         {
-                            info.itool.ClientRPC<int, int, int, float>(null, "Client_PlayNote", note, sharp, octave, noteval);
+                            itool.ClientRPC<int, int, int, float>(null, "Client_PlayNote", note, sharp, octave, noteval);
                             Instance.timer.Once(duration, () =>
                             {
-                                info.itool.ClientRPC<int, int, int, float>(null, "Client_StopNote", note, sharp, octave, noteval);
+                                itool.ClientRPC<int, int, int, float>(null, "Client_StopNote", note, sharp, octave, noteval);
                             });
                         }
                         break;
@@ -2359,37 +2372,6 @@ namespace Oxide.Plugins
 //        {
 //            public List<HumanoidInfo> Humanoids = new List<HumanoidInfo>();
 //        }
-
-        #region kits_classes
-        class KitsStoredData
-        {
-            public Dictionary<string, kit> Kits = new Dictionary<string, kit>();
-        }
-        class kit
-        {
-            public string name;
-            public string description;
-            public int max;
-            public double cooldown;
-            public int authlevel;
-            public bool hide;
-            public bool npconly;
-            public string permission;
-            public string image;
-            public string building;
-            public List<kititem> items = new List<kititem>();
-        }
-        class kititem
-        {
-            public int itemid;
-            public string container;
-            public int amount;
-            public ulong skinid;
-            public bool weapon;
-            public int blueprintTarget;
-            public List<int> mods = new List<int>();
-        }
-        #endregion
 
         private class UnityQuaternionConverter : JsonConverter
         {
