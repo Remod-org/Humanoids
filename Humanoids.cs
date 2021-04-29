@@ -1696,7 +1696,7 @@ namespace Oxide.Plugins
                 if (pause)
                 {
                     HandlePause();
-                    npc.player.SignalBroadcast(BaseEntity.Signal.Gesture, "wave");
+                    npc.player.SignalBroadcast(BaseEntity.Signal.Gesture, "shrug");
                 }
                 if (moving)
                 {
@@ -2182,7 +2182,7 @@ namespace Oxide.Plugins
                 if (pos != info.loc)
                 {
                     SetViewAngle(Quaternion.LookRotation(pos - info.loc));
-                    if (wave) player.SignalBroadcast(BaseEntity.Signal.Gesture, "shrug");
+                    if (wave) player.SignalBroadcast(BaseEntity.Signal.Gesture, "wave");
                 }
             }
 
