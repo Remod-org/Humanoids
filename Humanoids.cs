@@ -56,6 +56,7 @@ namespace Oxide.Plugins
         private const string NPCGUK = "npc.kitselect";
         private const string NPCGUL = "npc.locoselect";
         private const string NPCGUN = "npc.kitsetnum";
+        private const string NPCGUR = "npc.roadselect";
         private const string NPCGUS = "npc.select";
         private const string NPCGUV = "npc.setval";
 
@@ -96,8 +97,8 @@ namespace Oxide.Plugins
             var tmpnpcs = new Dictionary<ulong, HumanoidInfo>(npcs);
             foreach (KeyValuePair<ulong, HumanoidInfo> npc in tmpnpcs)
             {
-                if (npc.Value.npcid == 0) continue;
-                DoLog($"Spawning npc {npc.Value.npcid}");
+                if (npc.Value.userid == 0) continue;
+                DoLog($"Spawning npc {npc.Value.userid}");
                 ulong nid = 0;
                 SpawnNPC(npc.Value, out nid);
             }
@@ -130,7 +131,7 @@ namespace Oxide.Plugins
             var HumanoidObjs = Resources.FindObjectsOfTypeAll<HumanoidPlayer>();
             foreach (var obj in HumanoidObjs)
             {
-                DoLog($"Deleting {obj.info.displayName}:{obj.info.npcid}");
+                DoLog($"Deleting {obj.info.displayName}:{obj.info.userid}");
                 obj.movement.moving = false;
                 obj.player.Kill();
             }
@@ -140,6 +141,7 @@ namespace Oxide.Plugins
                 CuiHelper.DestroyUi(player, NPCGUK);
                 CuiHelper.DestroyUi(player, NPCGUL);
                 CuiHelper.DestroyUi(player, NPCGUN);
+                CuiHelper.DestroyUi(player, NPCGUR);
                 CuiHelper.DestroyUi(player, NPCGUS);
                 CuiHelper.DestroyUi(player, NPCGUV);
                 if (isopen.Contains(player.userID)) isopen.Remove(player.userID);
@@ -166,7 +168,7 @@ namespace Oxide.Plugins
             data.Clear();
             foreach (KeyValuePair<ulong, HumanoidInfo> pls in npcs)
             {
-               DoLog($"{pls.Value.npcid.ToString()}");
+               DoLog($"{pls.Value.userid.ToString()}");
             }
         }
         private void SaveData()
@@ -184,6 +186,7 @@ namespace Oxide.Plugins
                 ["npcgui"] = "Humanoid GUI",
                 ["npcguisel"] = "HumanoidGUI NPC Select ",
                 ["npcguikit"] = "HumanoidGUI Kit Select",
+                ["npcguiroad"] = "HumanoidGUI Road Select",
                 ["npcguiloco"] = "HumanoidGUI LocoMode Select",
                 ["close"] = "Close",
                 ["none"] = "None",
@@ -226,6 +229,15 @@ namespace Oxide.Plugins
         }
 
         #region Oxide Hooks
+        private List<BasePlayer> FindLocalHumanoids(Vector3 position, float range)
+        {
+            List<BasePlayer> pls = new List<BasePlayer>();
+            Vis.Entities(position, range, pls);
+            pls = pls.ToArray().OrderBy((d) => (d.transform.position - position).sqrMagnitude).ToList();
+
+            return pls;
+        }
+
         private void OnPlayerInput(BasePlayer player, InputState input)
         {
             if (player == null || input == null) return;
@@ -386,7 +398,7 @@ namespace Oxide.Plugins
                                         DoLog($"Checking match to {pls.Value.displayName}");
                                         if (pls.Value.displayName.ToLower() == args[1].ToLower())
                                         {
-                                            NpcEditGUI(player, pls.Value.npcid);
+                                            NpcEditGUI(player, pls.Value.userid);
                                             break;
                                         }
                                     }
@@ -424,7 +436,7 @@ namespace Oxide.Plugins
                                         RemoveNPC(pls.Value);
                                         break;
                                     }
-                                    else if (npcid == pls.Value.npcid)
+                                    else if (npcid == pls.Value.userid)
                                     {
                                         RemoveNPC(pls.Value);
                                         break;
@@ -456,6 +468,12 @@ namespace Oxide.Plugins
                             NPCKitGUI(player, ulong.Parse(args[1]), args[2]);
                         }
                         break;
+                    case "npcselroad":
+                        if (args.Length > 2)
+                        {
+                            NPCRoadGUI(player, ulong.Parse(args[1]), args[2] + " " + args[3]);
+                        }
+                        break;
                     case "npcselloco":
                         if (args.Length > 1)
                         {
@@ -470,6 +488,20 @@ namespace Oxide.Plugins
                             npc = npcs[userid];
                             var kitname = args[2];
                             npc.kit = kitname;
+                            var hp = FindHumanoidByID(userid);
+                            SaveData();
+                            RespawnNPC(hp.player);
+                            NpcEditGUI(player, userid);
+                        }
+                        break;
+                    case "roadsel":
+                        if (args.Length > 2)
+                        {
+                            CuiHelper.DestroyUi(player, NPCGUR);
+                            var userid = ulong.Parse(args[1]);
+                            npc = npcs[userid];
+                            var roadname = args[2] + " " + args[3];
+                            npc.roadname = roadname;
                             var hp = FindHumanoidByID(userid);
                             SaveData();
                             RespawnNPC(hp.player);
@@ -539,6 +571,9 @@ namespace Oxide.Plugins
                         break;
                     case "selkitclose":
                         CuiHelper.DestroyUi(player, NPCGUK);
+                        break;
+                    case "selroadclose":
+                        CuiHelper.DestroyUi(player, NPCGUR);
                         break;
                     case "sellococlose":
                         CuiHelper.DestroyUi(player, NPCGUL);
@@ -633,7 +668,7 @@ namespace Oxide.Plugins
             var npc = hp.GetComponentInParent<BasePlayer>();
             if (npc == null) return false;
             KillNpc(npc);
-            npcs.Remove(hp.info.npcid);
+            npcs.Remove(hp.info.userid);
             SaveData();
             return true;
         }
@@ -645,7 +680,7 @@ namespace Oxide.Plugins
             var npc = hp.GetComponentInParent<BasePlayer>();
             if (npc == null) return false;
             KillNpc(npc);
-            npcs.Remove(hp.info.npcid);
+            npcs.Remove(hp.info.userid);
             SaveData();
             return true;
         }
@@ -788,6 +823,7 @@ namespace Oxide.Plugins
         }
         private object npcPlayNote(ulong npcid, int band, int note, int sharp, int octave, float noteval, float duration = 0.2f)
         {
+            //Puts($"npcPlayNote called for {npcid.ToString()}");
             if (npcs.ContainsKey(npcid))
             {
                 var hp = FindHumanoidByID(npcid);
@@ -871,6 +907,7 @@ namespace Oxide.Plugins
                     { "maxDistance",  npcs[npc].maxDistance.ToString() },
                     { "damageDistance",  npcs[npc].damageDistance.ToString() },
                     { "locomode",  npcs[npc].locomode.ToString() },
+                    { "roadname",  npcs[npc].roadname },
                     { "speed",  npcs[npc].speed.ToString() },
                     { "band",  npcs[npc].band.ToString() }
                 };
@@ -921,6 +958,18 @@ namespace Oxide.Plugins
                         {
                             string kitname = info.Value != null ? info.Value : Lang("none");
                             UI.Button(ref container, NPCGUI, UI.Color("#d85540", 1f), kitname, 12, $"{posb[0]} {posb[1]}", $"{posb[0] + ((posb[2] - posb[0]) / 2)} {posb[3]}", $"npc npcselkit {npc.ToString()} {kitname}");
+                        }
+                        else
+                        {
+                            UI.Label(ref container, NPCGUI, UI.Color("#ffffff", 1f), Lang("none"), 12, $"{posb[0]} {posb[1]}", $"{posb[0] + ((posb[2] - posb[0]) / 2)} {posb[3]}");
+                        }
+                    }
+                    else if (info.Key == "roadname")
+                    {
+                        if (plugins.Exists("RoadFinder"))
+                        {
+                            string roadname = info.Value != null ? info.Value : Lang("none");
+                            UI.Button(ref container, NPCGUI, UI.Color("#d85540", 1f), roadname, 12, $"{posb[0]} {posb[1]}", $"{posb[0] + ((posb[2] - posb[0]) / 2)} {posb[3]}", $"npc npcselroad {npc.ToString()} {roadname}");
                         }
                         else
                         {
@@ -1013,7 +1062,7 @@ namespace Oxide.Plugins
             CuiHelper.AddUi(player, container);
         }
 
-        void NPCKitGUI(BasePlayer player, ulong npc, string kit)
+        void NPCKitGUI(BasePlayer player, ulong npc, string kit = null)
         {
             IsOpen(player.userID, true);
             CuiHelper.DestroyUi(player, NPCGUK);
@@ -1026,6 +1075,7 @@ namespace Oxide.Plugins
             int col = 0;
             int row = 0;
 
+            if (kit == null) kit = Lang("none");
             List<string> kits = new List<string>();
             Kits?.CallHook("GetKitNames", kits);
             foreach (var kitinfo in kits)
@@ -1037,7 +1087,6 @@ namespace Oxide.Plugins
                 }
                 float[] posb = GetButtonPositionP(row, col);
 
-                if (kit == null) kit = Lang("none");
                 if (kitinfo == kit)
                 {
                     UI.Button(ref container, NPCGUK, UI.Color("#d85540", 1f), kitinfo, 12, $"{posb[0]} {posb[1]}", $"{posb[0] + ((posb[2] - posb[0]) / 2)} {posb[3]}", $"npc kitsel {npc.ToString()} {kitinfo}");
@@ -1045,6 +1094,43 @@ namespace Oxide.Plugins
                 else
                 {
                     UI.Button(ref container, NPCGUK, UI.Color("#424242", 1f), kitinfo, 12, $"{posb[0]} {posb[1]}", $"{posb[0] + ((posb[2] - posb[0]) / 2)} {posb[3]}", $"npc kitsel {npc.ToString()} {kitinfo}");
+                }
+                row++;
+            }
+
+            CuiHelper.AddUi(player, container);
+        }
+
+        void NPCRoadGUI(BasePlayer player, ulong npc, string road  = null)
+        {
+            IsOpen(player.userID, true);
+            CuiHelper.DestroyUi(player, NPCGUR);
+
+            string description = Lang("npcguiroad");
+            CuiElementContainer container = UI.Container(NPCGUR, UI.Color("242424", 1f), "0.1 0.1", "0.9 0.9", true, "Overlay");
+            UI.Label(ref container, NPCGUR, UI.Color("#ffffff", 1f), description, 18, "0.23 0.92", "0.7 1");
+            UI.Button(ref container, NPCGUR, UI.Color("#d85540", 1f), Lang("close"), 12, "0.92 0.93", "0.985 0.98", $"npc selroadclose");
+
+            int col = 0;
+            int row = 0;
+
+            if (road == null) road = Lang("none");
+            foreach (var roadinfo in roads)
+            {
+                if (row > 10)
+                {
+                    row = 0;
+                    col++;
+                }
+                float[] posb = GetButtonPositionP(row, col);
+
+                if (roadinfo.Key == road)
+                {
+                    UI.Button(ref container, NPCGUR, UI.Color("#d85540", 1f), roadinfo.Key, 12, $"{posb[0]} {posb[1]}", $"{posb[0] + ((posb[2] - posb[0]) / 2)} {posb[3]}", $"npc roadsel {npc.ToString()} {roadinfo.Key}");
+                }
+                else
+                {
+                    UI.Button(ref container, NPCGUR, UI.Color("#424242", 1f), roadinfo.Key, 12, $"{posb[0]} {posb[1]}", $"{posb[0] + ((posb[2] - posb[0]) / 2)} {posb[3]}", $"npc roadsel {npc.ToString()} {roadinfo.Key}");
                 }
                 row++;
             }
@@ -1171,7 +1257,7 @@ namespace Oxide.Plugins
                 DoLog($"Is {humanplayer.player.displayName} a Humanoid?");
                 if (humanplayer.player.userID == playerid)
                 {
-                    return humanplayer.info.npcid;
+                    return humanplayer.info.userid;
                 }
             }
             return 0;
@@ -1182,7 +1268,7 @@ namespace Oxide.Plugins
             foreach (var humanplayer in allBasePlayer)
             {
                 DoLog($"Is {humanplayer.player.displayName} a Humanoid?");
-                if (humanplayer.player.userID != userid && humanplayer.info.npcid != userid) continue;
+                if (humanplayer.player.userID != userid && humanplayer.info.userid != userid) continue;
                 return humanplayer;
             }
             return null;
@@ -1201,13 +1287,13 @@ namespace Oxide.Plugins
 
         private void RemoveNPC(HumanoidInfo info)
         {
-            if (npcs.ContainsKey(info.npcid))
+            if (npcs.ContainsKey(info.userid))
             {
                 //storedData.Humanoids.Remove(npcs[info.userid]);
                 //npcs[info.userid] = null;
-                npcs.Remove(info.npcid);
+                npcs.Remove(info.userid);
             }
-            var npc = FindHumanoidByID(info.npcid);
+            var npc = FindHumanoidByID(info.userid);
             if (npc?.player != null && !npc.player.IsDestroyed)
             {
                 npc.player.KillMessage();
@@ -1239,11 +1325,10 @@ namespace Oxide.Plugins
         private void SpawnNPC(HumanoidInfo info, out ulong npcid)
         {
             DoLog($"Attempting to spawn new humanoid...");
-            if (info.npcid == 0)
+            if (info.userid == 0)
             {
-                info.npcid = (ulong)UnityEngine.Random.Range(0, 2147483647);
+                info.userid = (ulong)UnityEngine.Random.Range(0, 2147483647);
             }
-            npcid = info.npcid;
 
             var player = GameManager.server.CreateEntity("assets/prefabs/player/player.prefab", info.loc, info.rot).ToPlayer();
             DoLog($"Player object created...");
@@ -1260,16 +1345,17 @@ namespace Oxide.Plugins
                 player.transform.position = info.loc;
             }
             UpdateInventory(npc);
+            npcid = info.userid;
 
-            DoLog($"Spawned NPCid {info.npcid} with userid {player.UserIDString}");
+            DoLog($"Spawned NPC with userid {player.UserIDString}");
 
-            if (npcs.ContainsKey(info.npcid))
+            if (npcs.ContainsKey(info.userid))
             {
-                npcs[info.npcid] = npc.info;
+                npcs[info.userid] = npc.info;
             }
             else
             {
-                npcs.Add(info.npcid, npc.info);
+                npcs.Add(info.userid, npc.info);
             }
             SaveData();
         }
@@ -1322,7 +1408,6 @@ namespace Oxide.Plugins
         public class HumanoidInfo
         {
             // Basic
-            public ulong npcid;
             public ulong userid;
             public string displayName;
             public string kit;
@@ -1365,7 +1450,6 @@ namespace Oxide.Plugins
 
             public HumanoidInfo(ulong uid, Vector3 position, Quaternion rotation)
             {
-                npcid = uid;
                 displayName = "Noid";
                 invulnerable = true;
                 //health = 50;
@@ -1387,7 +1471,7 @@ namespace Oxide.Plugins
                 //stopandtalkSeconds = 3;
                 enable = true;
                 //persistent = true;
-                lootable = true;
+                lootable = false;
                 entrypause = true;
                 entrypausetime = 5f;
                 defend = false;
@@ -1901,7 +1985,7 @@ namespace Oxide.Plugins
                     }
                 }
 
-                roadname = "Road 5"; // TESTING
+                //roadname = "Road 5"; // TESTING
                 int i = 0;
                 foreach (var point in roads[roadname].points)
                 {
