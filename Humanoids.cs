@@ -190,6 +190,8 @@ namespace Oxide.Plugins
                 ["npcguiloco"] = "HumanoidGUI LocoMode Select",
                 ["close"] = "Close",
                 ["none"] = "None",
+                ["npc"] = "NPC",
+                ["humanoids"] = "Humanoids",
                 ["needselect"] = "Select NPC",
                 ["select"] = "Select",
                 ["editing"] = "Editing",
@@ -268,6 +270,7 @@ namespace Oxide.Plugins
                 hp.LookTowards(player.transform.position, true);
                 Message(player.IPlayer, hp.info.displayName);
                 Interface.Oxide.CallHook("OnUseNPC", hp.player, player);
+                SaveData();
                 break;
             }
         }
@@ -835,20 +838,54 @@ namespace Oxide.Plugins
         #endregion
 
         #region GUI
+        // Determine open GUI to limit interruptions
         private void IsOpen(ulong uid, bool set=false)
         {
             if (set)
             {
-#if DEBUG
-                Puts($"Setting isopen for {uid}");
-#endif
+                DoLog($"Setting isopen for {uid}");
                 if (!isopen.Contains(uid)) isopen.Add(uid);
                 return;
             }
-#if DEBUG
-            Puts($"Clearing isopen for {uid}");
-#endif
+            DoLog($"Clearing isopen for {uid}");
             isopen.Remove(uid);
+        }
+
+        void NPCSelectGUI(BasePlayer player)
+        {
+            IsOpen(player.userID, true);
+            CuiHelper.DestroyUi(player, NPCGUS);
+
+            string description = Lang("npcguisel");
+            CuiElementContainer container = UI.Container(NPCGUS, UI.Color("242424", 1f), "0.1 0.1", "0.9 0.9", true, "Overlay");
+            UI.Label(ref container, NPCGUS, UI.Color("#ffffff", 1f), description, 18, "0.23 0.92", "0.7 1");
+            UI.Label(ref container, NPCGUS, UI.Color("#22cc44", 1f), Lang("musician"), 12, "0.72 0.92", "0.77 1");
+            UI.Label(ref container, NPCGUS, UI.Color("#2244cc", 1f), Lang("standard"), 12, "0.79 0.92", "0.86 1");
+            UI.Button(ref container, NPCGUS, UI.Color("#d85540", 1f), Lang("close"), 12, "0.92 0.93", "0.985 0.98", $"npc selclose");
+            int col = 0;
+            int row = 0;
+
+            foreach (KeyValuePair<ulong, HumanoidInfo> npc in npcs)
+            {
+                if (row > 10)
+                {
+                    row = 0;
+                    col++;
+                }
+                var hBand = npc.Value.band.ToString();
+                if (hBand == "99") continue;
+                string color = "#2244cc";
+                if (hBand != "0") color = "#22cc44";
+
+                var hName = npc.Value.displayName;
+                float[] posb = GetButtonPositionP(row, col);
+                UI.Button(ref container, NPCGUS, UI.Color(color, 1f), hName, 12, $"{posb[0]} {posb[1]}", $"{posb[0] + ((posb[2] - posb[0]) / 2)} {posb[3]}", $"npc edit {npc.Value.displayName}");
+                row++;
+            }
+            float[] posn = GetButtonPositionP(row, col);
+            UI.Button(ref container, NPCGUS, UI.Color("#cc3333", 1f), Lang("new"), 12, $"{posn[0]} {posn[1]}", $"{posn[0] + ((posn[2] - posn[0]) / 2)} {posn[3]}", $"npc new");
+
+            CuiHelper.AddUi(player, container);
         }
 
         void NpcEditGUI(BasePlayer player, ulong npc = 0)
@@ -874,7 +911,7 @@ namespace Oxide.Plugins
             }
             UI.Button(ref container, NPCGUI, UI.Color("#d85540", 1f), Lang("select"), 12, "0.86 0.95", "0.92 0.98", $"npc select");
             UI.Button(ref container, NPCGUI, UI.Color("#d85540", 1f), Lang("close"), 12, "0.93 0.95", "0.99 0.98", $"npc close");
-            UI.Label(ref container, NPCGUI, UI.Color("#ffffff", 1f), Lang("npc") + ": " + npcname, 24, "0.2 0.92", "0.7 1");
+            UI.Label(ref container, NPCGUI, UI.Color("#ffffff", 1f), Lang("npcgui") + ": " + npcname, 24, "0.2 0.92", "0.7 1");
 
             int col = 0;
             int row = 0;
@@ -1023,43 +1060,6 @@ namespace Oxide.Plugins
 
         void NPCMessageGUI(BasePlayer player, ulong npc, string field, string message)
         {
-        }
-
-        void NPCSelectGUI(BasePlayer player)
-        {
-            IsOpen(player.userID, true);
-            CuiHelper.DestroyUi(player, NPCGUS);
-
-            string description = Lang("npcguisel");
-            CuiElementContainer container = UI.Container(NPCGUS, UI.Color("242424", 1f), "0.1 0.1", "0.9 0.9", true, "Overlay");
-            UI.Label(ref container, NPCGUS, UI.Color("#ffffff", 1f), description, 18, "0.23 0.92", "0.7 1");
-            UI.Label(ref container, NPCGUS, UI.Color("#22cc44", 1f), Lang("musician"), 12, "0.72 0.92", "0.77 1");
-            UI.Label(ref container, NPCGUS, UI.Color("#2244cc", 1f), Lang("standard"), 12, "0.79 0.92", "0.86 1");
-            UI.Button(ref container, NPCGUS, UI.Color("#d85540", 1f), Lang("close"), 12, "0.92 0.93", "0.985 0.98", $"npc selclose");
-            int col = 0;
-            int row = 0;
-
-            foreach (KeyValuePair<ulong, HumanoidInfo> npc in npcs)
-            {
-                if (row > 10)
-                {
-                    row = 0;
-                    col++;
-                }
-                var hBand = npc.Value.band.ToString();
-                if (hBand == "99") continue;
-                string color = "#2244cc";
-                if (hBand != "0") color = "#22cc44";
-
-                var hName = npc.Value.displayName;
-                float[] posb = GetButtonPositionP(row, col);
-                UI.Button(ref container, NPCGUS, UI.Color(color, 1f), hName, 12, $"{posb[0]} {posb[1]}", $"{posb[0] + ((posb[2] - posb[0]) / 2)} {posb[3]}", $"npc edit {npc.Value.displayName}");
-                row++;
-            }
-            float[] posn = GetButtonPositionP(row, col);
-            UI.Button(ref container, NPCGUS, UI.Color("#cc3333", 1f), Lang("new"), 12, $"{posn[0]} {posn[1]}", $"{posn[0] + ((posn[2] - posn[0]) / 2)} {posn[3]}", $"npc new");
-
-            CuiHelper.AddUi(player, container);
         }
 
         void NPCKitGUI(BasePlayer player, ulong npc, string kit = null)
@@ -1343,6 +1343,11 @@ namespace Oxide.Plugins
             {
                 DoLog($"Setting location to {info.loc}");
                 player.transform.position = info.loc;
+            }
+            if (info.rot != Quaternion.identity)
+            {
+                DoLog($"Setting rotation to {info.rot}");
+                player.transform.rotation = info.rot;
             }
             UpdateInventory(npc);
             npcid = info.userid;
