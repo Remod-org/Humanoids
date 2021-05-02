@@ -38,7 +38,7 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("Humanoids", "RFC1920", "1.0.7")]
+    [Info("Humanoids", "RFC1920", "1.1.0")]
     [Description("Adds interactive NPCs which can be modded by other plugins")]
     class Humanoids : RustPlugin
     {
@@ -278,11 +278,19 @@ namespace Oxide.Plugins
         // More decisions needed here on what to do (return fire, etc.)
 //        object OnEntityTakeDamage(BaseCombatEntity entity, HitInfo hitinfo)
 //        {
+//            if (entity == null) return null;
+//            if (hitinfo == null) return null;
+//
 //            var pl = hitinfo.HitEntity as BasePlayer;
+//            Puts("CUNTS");
 //            if (pl = null) return null;
 //            var hp = pl.GetComponentInParent<HumanoidPlayer>();
 //            if (hp = null) return null;
+//
 //            if (hp.info.invulnerable) return true;
+//
+//            hp.movement.attacked = true;
+//            hp.movement.attackEntity = hitinfo.HitEntity as BaseCombatEntity;
 //
 //            return null;
 //        }
@@ -324,6 +332,7 @@ namespace Oxide.Plugins
 
             return true;
         }
+
         private object OnUserCommand(BasePlayer player, string command, string[] args)
         {
             if (command != "npc" && isopen.Contains(player.userID)) return true;
@@ -604,10 +613,11 @@ namespace Oxide.Plugins
                 case "y":
                 case "on":
                     return true;
+                case "f":
                 case "false":
                 case "0":
-                case "n":
                 case "no":
+                case "n":
                 case "off":
                 default:
                     return false;
@@ -687,7 +697,6 @@ namespace Oxide.Plugins
             SaveData();
             return true;
         }
-
         private void SetHumanoidInfo(ulong npcid, string toset, string data, string rot = null)
         {
             DoLog($"SetHumanoidInfo called for {npcid.ToString()} {toset},{data}");
@@ -737,6 +746,7 @@ namespace Oxide.Plugins
                 case "canmove":
                     hp.info.canmove = !GetBoolValue(data);
                     break;
+                case "allowsit":
                 case "cansit":
                     hp.info.cansit = !GetBoolValue(data);
                     hp.info.canmove = hp.info.cansit;
@@ -853,6 +863,7 @@ namespace Oxide.Plugins
 
         void NPCSelectGUI(BasePlayer player)
         {
+            if (player == null) return;
             IsOpen(player.userID, true);
             CuiHelper.DestroyUi(player, NPCGUS);
 
@@ -1060,10 +1071,12 @@ namespace Oxide.Plugins
 
         void NPCMessageGUI(BasePlayer player, ulong npc, string field, string message)
         {
+            if (player == null) return;
         }
 
         void NPCKitGUI(BasePlayer player, ulong npc, string kit = null)
         {
+            if (player == null) return;
             IsOpen(player.userID, true);
             CuiHelper.DestroyUi(player, NPCGUK);
 
@@ -1103,6 +1116,7 @@ namespace Oxide.Plugins
 
         void NPCRoadGUI(BasePlayer player, ulong npc, string road  = null)
         {
+            if (player == null) return;
             IsOpen(player.userID, true);
             CuiHelper.DestroyUi(player, NPCGUR);
 
@@ -1140,6 +1154,7 @@ namespace Oxide.Plugins
 
         void NPCLocoGUI(BasePlayer player, ulong npc)
         {
+            if (player == null) return;
             IsOpen(player.userID, true);
             CuiHelper.DestroyUi(player, NPCGUL);
 
@@ -1249,26 +1264,20 @@ namespace Oxide.Plugins
             }
         }
 
-        private ulong FindHumanoidByPlayerID(ulong playerid)
-        {
-            var allBasePlayer = Resources.FindObjectsOfTypeAll<HumanoidPlayer>();
-            foreach (var humanplayer in allBasePlayer)
-            {
-                DoLog($"Is {humanplayer.player.displayName} a Humanoid?");
-                if (humanplayer.player.userID == playerid)
-                {
-                    return humanplayer.info.userid;
-                }
-            }
-            return 0;
-        }
+        // This is critical to the speed of operations on FindHumanoidByID/Name
+        private Dictionary<ulong, HumanoidPlayer> hpcache = new Dictionary<ulong, HumanoidPlayer>();
+        private Dictionary<string, HumanoidPlayer> hpcachen = new Dictionary<string, HumanoidPlayer>();
+
         private HumanoidPlayer FindHumanoidByID(ulong userid, bool playerid = false)
         {
+            HumanoidPlayer hp;
+            if (hpcache.TryGetValue(userid, out hp)) return hp;
             var allBasePlayer = Resources.FindObjectsOfTypeAll<HumanoidPlayer>();
             foreach (var humanplayer in allBasePlayer)
             {
                 DoLog($"Is {humanplayer.player.displayName} a Humanoid?");
                 if (humanplayer.player.userID != userid && humanplayer.info.userid != userid) continue;
+                hpcache[userid] = humanplayer;
                 return humanplayer;
             }
             return null;
@@ -1276,10 +1285,13 @@ namespace Oxide.Plugins
 
         public HumanoidPlayer FindHumanoidByName(string name)
         {
+            HumanoidPlayer hp;
+            if (hpcachen.TryGetValue(name, out hp)) return hp;
             var allBasePlayer = Resources.FindObjectsOfTypeAll<HumanoidPlayer>();
             foreach (var humanplayer in allBasePlayer)
             {
                 if (humanplayer.info.displayName != name) continue;
+                hpcachen[name] = humanplayer;
                 return humanplayer;
             }
             return null;
@@ -1293,6 +1305,8 @@ namespace Oxide.Plugins
                 //npcs[info.userid] = null;
                 npcs.Remove(info.userid);
             }
+            hpcache.Remove(info.userid);
+            hpcachen.Remove(info.displayName);
             var npc = FindHumanoidByID(info.userid);
             if (npc?.player != null && !npc.player.IsDestroyed)
             {
@@ -1308,6 +1322,8 @@ namespace Oxide.Plugins
             if (player != null && info != null)
             {
                 KillNpc(player);
+                hpcache.Remove(player.userID);
+                hpcachen.Remove(player.name);
                 ulong x = 0;
                 SpawnNPC(info, out x);
                 player.EndSleeping();
@@ -1337,6 +1353,8 @@ namespace Oxide.Plugins
             npc.SetInfo(info);
 
             player.Spawn();
+            //hpcache[info.userid] = npc;
+            //hpcachen[info.displayName] = npc;
 
             info.userid = player.userID;
             if (info.loc != Vector3.zero)
@@ -1408,7 +1426,8 @@ namespace Oxide.Plugins
             Stand = 4,
             Road = 8,
             Ride = 16,
-            Monument = 32
+            Monument = 32,
+            Defend = 64
         }
         public class HumanoidInfo
         {
@@ -1443,12 +1462,14 @@ namespace Oxide.Plugins
             public float maxDistance = 100f;
             public float attackDistance = 30f;
             public float damageDistance = 20f;
+            public float damageAmount = 1f;
             public float followTime = 30f;
             public float entrypausetime = 5f;
             public string roadname;
             public string monstart;
             public string monend;
             public LocoMode locomode;
+            public LocoMode defaultLoco;
             public string waypoint;
 
             public int band = 0;
@@ -1467,7 +1488,7 @@ namespace Oxide.Plugins
                 rot = rotation;
                 //collisionRadius = 10;
                 damageDistance = 3;
-                //damageAmount = 10;
+                damageAmount = 10;
                 attackDistance = 100;
                 maxDistance = 200;
                 //hitchance = 0.75f;
@@ -1509,6 +1530,7 @@ namespace Oxide.Plugins
             private float tripTime = 0f;
 
             // Real-time status
+            public bool attacked = false;
             public bool moving = false;
             public bool sitting = false;
             public bool riding = false;
@@ -1553,7 +1575,16 @@ namespace Oxide.Plugins
             {
                 if (npc.player.IsWounded() || npc.player.IsDead())
                 {
-                    Stop();
+                    if (attacked & npc.info.defend)
+                    {
+                        npc.info.defaultLoco = npc.info.locomode;
+                        npc.info.locomode = LocoMode.Defend;
+                        DetermineMove();
+                    }
+                    else
+                    {
+                        Stop();
+                    }
                 }
                 else
                 {
@@ -1620,6 +1651,89 @@ namespace Oxide.Plugins
 //                Instance.DoLog($"SetMovementPoint({currentWaypoint.ToString()}) Start: {StartPos.ToString()}, current {npc.info.loc.ToString()}, End: {endpos.ToString()}), time: {ts}");
             }
 
+            private void Defend()
+            {
+                if (attackEntity.IsDead() || attackEntity.IsDestroyed)
+                {
+                    attacked = false;
+                    npc.info.locomode = npc.info.defaultLoco;
+                    return;
+                }
+
+                HeldEntity weapon = npc.player.GetHeldEntity() ?? null;
+                if (weapon as BaseProjectile == null)
+                {
+                    weapon = npc.EquipFirstWeapon();
+                    if (weapon == null)
+                    {
+                        weapon = npc.EquipFirstTool();
+                    }
+                }
+                if (weapon == null)
+                {
+                    return; // If only you could smack a player with a fish...
+                }
+
+                npc.LookTowards(attackEntity.transform.position);
+                FiringEffect(attackEntity, weapon as BaseProjectile, npc.info.damageAmount, false); // miss is based on a hitchance calc. false for now
+                DoAttack();
+            }
+
+            private void FiringEffect(BaseCombatEntity target, BaseProjectile weapon, float da, bool miss)
+            {
+                var component = weapon.primaryMagazine.ammoType.GetComponent<ItemModProjectile>();
+                var source = npc.player.transform.position + npc.player.GetOffset();
+                if (weapon.MuzzlePoint != null)
+                {
+                    source += Quaternion.LookRotation(target.transform.position - npc.player.transform.position) * weapon.MuzzlePoint.position;
+                }
+                var direction = (target.transform.position + npc.player.GetOffset() - source).normalized;
+                var vector32 = direction * (component.projectileVelocity * weapon.projectileVelocityScale);
+
+                if (miss)
+                {
+                    var aimCone = weapon.GetAimCone();
+                    vector32 += Quaternion.Euler(UnityEngine.Random.Range((float)(-aimCone * 0.5), aimCone * 0.5f), UnityEngine.Random.Range((float)(-aimCone * 0.5), aimCone * 0.5f), UnityEngine.Random.Range((float)(-aimCone * 0.5), aimCone * 0.5f)) * npc.player.eyes.HeadForward();
+                }
+
+                Effect.server.Run(weapon.attackFX.resourcePath, weapon, StringPool.Get(weapon.handBone), Vector3.zero, Vector3.forward);
+                var effect = new Effect();
+                effect.Init(Effect.Type.Projectile, source, vector32.normalized);
+                effect.scale = vector32.magnitude;
+                effect.pooledString = component.projectileObject.resourcePath;
+                effect.number = UnityEngine.Random.Range(0, 2147483647);
+                EffectNetwork.Send(effect);
+
+//                Vector3 dest;
+//                if (miss)
+//                {
+//                    da = 0;
+//                    dest = hit;
+//                }
+//                else
+//                {
+//                    dest = target.transform.position;
+//                }
+//                var hitInfo = new HitInfo(npc.player, target, DamageType.Bullet, dmg, dest)
+//                {
+//                    DidHit = !miss,
+//                    HitEntity = target,
+//                    PointStart = source,
+//                    PointEnd = hit,
+//                    HitPositionWorld = dest,
+//                    HitNormalWorld = -dir,
+//                    WeaponPrefab = GameManager.server.FindPrefab(StringPool.Get(baseProjectile.prefabID)).GetComponent<AttackEntity>(),
+//                    Weapon = (AttackEntity)firstWeapon,
+//                    HitMaterial = StringPool.Get("Flesh")
+//                };
+//                target?.OnAttacked(hitInfo);
+//                Effect.server.ImpactEffect(hitInfo);
+            }
+
+            private void DoAttack()
+            {
+            }
+
             private void Execute_Move()
             {
                 if (!npc.info.canmove) return;
@@ -1628,6 +1742,10 @@ namespace Oxide.Plugins
                 currPos = Vector3.Lerp(StartPos, EndPos, waypointDone);
                 //currPos.y = GetMoveY(currPos); // Adjust for terrain height
 
+                if (attacked && npc.info.locomode == LocoMode.Defend)
+                {
+                    Defend();
+                }
                 elapsedTime += Time.deltaTime;
                 waypointDone = Mathf.InverseLerp(0f, tripTime, elapsedTime);
                 float dte = FlatDistance(currPos, EndPos);
@@ -2184,6 +2302,10 @@ namespace Oxide.Plugins
                         npc.info.canride = false;
                         npc.info.canmove = true;
                         break;
+                    case LocoMode.Defend:
+                        npc.info.canmove = true;
+                        npc.info.cansit = false;
+                        break;
                     case LocoMode.Default:
                     default:
                         npc.info.cansit = false;
@@ -2391,6 +2513,7 @@ namespace Oxide.Plugins
 
             public void PlayNote(int note, int sharp, int octave, float noteval, float duration = 0.2f)
             {
+                if (duration == 0) duration = 0.2f;
                 switch (instrument)
                 {
                     case "drumkit.deployed.static":
