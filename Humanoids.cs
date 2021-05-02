@@ -1831,28 +1831,31 @@ namespace Oxide.Plugins
                 if (!npc.info.cansit) return;
                 //Instance.DoLog($"[HumanoidMovement] {npc.player.displayName} wants to sit...");
                 // Find a place to sit
-                List<BaseChair> chairs = new List<BaseChair>();
-                List<StaticInstrument> pidrxy = new List<StaticInstrument>();
-                Vis.Entities(npc.info.loc, 10f, chairs);
-
-                foreach (var mountable in chairs.Distinct().ToList())
+                if (npc.info.band == 0)
                 {
-                    Instance.DoLog($"[HumanoidMovement] {npc.player.displayName} trying to sit in chair...");
-                    if (mountable.IsMounted())
+                    List<BaseChair> chairs = new List<BaseChair>();
+                    Vis.Entities(npc.info.loc, 5f, chairs);
+
+                    foreach (var mountable in chairs.Distinct().ToList())
                     {
-                        Instance.DoLog($"[HumanoidMovement] Someone is sitting here.");
-                        continue;
+                        Instance.DoLog($"[HumanoidMovement] {npc.player.displayName} trying to sit in chair...");
+                        if (mountable.IsMounted())
+                        {
+                            Instance.DoLog($"[HumanoidMovement] Someone is sitting here.");
+                            continue;
+                        }
+                        Instance.DoLog($"[HumanoidMovement] Found an empty chair.");
+                        mountable.MountPlayer(npc.player);
+                        npc.player.OverrideViewAngles(mountable.mountAnchor.transform.rotation.eulerAngles);
+                        npc.player.eyes.NetworkUpdate(mountable.mountAnchor.transform.rotation);
+                        npc.player.ClientRPCPlayer<Vector3>(null, npc.player, "ForcePositionTo", npc.player.transform.position);
+                        //mountable.SetFlag(BaseEntity.Flags.Busy, true, false);
+                        sitting = true;
+                        break;
                     }
-                    Instance.DoLog($"[HumanoidMovement] Found an empty chair.");
-                    mountable.MountPlayer(npc.player);
-                    npc.player.OverrideViewAngles(mountable.mountAnchor.transform.rotation.eulerAngles);
-                    npc.player.eyes.NetworkUpdate(mountable.mountAnchor.transform.rotation);
-                    npc.player.ClientRPCPlayer<Vector3>(null, npc.player, "ForcePositionTo", npc.player.transform.position);
-                    //mountable.SetFlag(BaseEntity.Flags.Busy, true, false);
-                    sitting = true;
-                    break;
                 }
 
+                List<StaticInstrument> pidrxy = new List<StaticInstrument>();
                 Vis.Entities(npc.info.loc, 2f, pidrxy);
                 foreach (var mountable in pidrxy.Distinct().ToList())
                 {
