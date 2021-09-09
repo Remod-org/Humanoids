@@ -39,7 +39,7 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("Humanoids", "RFC1920", "1.1.1")]
+    [Info("Humanoids", "RFC1920", "1.1.2")]
     [Description("Adds interactive NPCs which can be modded by other plugins")]
     class Humanoids : RustPlugin
     {
@@ -61,14 +61,19 @@ namespace Oxide.Plugins
         private const string NPCGUR = "npc.roadselect";
         private const string NPCGUS = "npc.select";
         private const string NPCGUV = "npc.setval";
+        private readonly List<string> guis = new List<string>() { NPCGUI, NPCGUK, NPCGUL, NPCGUM, NPCGUN, NPCGUR, NPCGUS, NPCGUV };
 
         public static Humanoids Instance = null;
-        private Dictionary<ulong, HumanoidInfo> npcs = new Dictionary<ulong, HumanoidInfo>();
+        private static Dictionary<ulong, HumanoidInfo> npcs = new Dictionary<ulong, HumanoidInfo>();
+
+        // This is critical to the speed of operations on FindHumanoidByID/Name
+        private Dictionary<ulong, HumanoidPlayer>  hpcacheid = new Dictionary<ulong, HumanoidPlayer>();
+        private Dictionary<string, HumanoidPlayer> hpcachenm = new Dictionary<string, HumanoidPlayer>();
 
         private static Dictionary<string, Road> roads = new Dictionary<string, Road>();
         private static SortedDictionary<string, Vector3> monPos = new SortedDictionary<string, Vector3>();
-        private SortedDictionary<string, Vector3> monSize = new SortedDictionary<string, Vector3>();
-        private SortedDictionary<string, Vector3> cavePos = new SortedDictionary<string, Vector3>();
+        private static SortedDictionary<string, Vector3> monSize = new SortedDictionary<string, Vector3>();
+        private static SortedDictionary<string, Vector3> cavePos = new SortedDictionary<string, Vector3>();
 
         private static Vector3 Vector3Down;
         private readonly static int playerMask = LayerMask.GetMask("Player (Server)");
@@ -96,7 +101,7 @@ namespace Oxide.Plugins
             Instance = this;
 
             LoadData();
-            var tmpnpcs = new Dictionary<ulong, HumanoidInfo>(npcs);
+            Dictionary<ulong, HumanoidInfo> tmpnpcs = new Dictionary<ulong, HumanoidInfo>(npcs);
             foreach (KeyValuePair<ulong, HumanoidInfo> npc in tmpnpcs)
             {
                 if (npc.Value.userid == 0) continue;
@@ -112,20 +117,17 @@ namespace Oxide.Plugins
             if (RoadFinder)
             {
                 object x = RoadFinder.CallHook("GetRoads");
-                var json = JsonConvert.SerializeObject(x);
+                string json = JsonConvert.SerializeObject(x);
                 roads = JsonConvert.DeserializeObject<Dictionary<string, Road>>(json);
             }
 
             foreach (BasePlayer player in BasePlayer.activePlayerList)
             {
-                CuiHelper.DestroyUi(player, NPCGUI);
-                CuiHelper.DestroyUi(player, NPCGUK);
-                CuiHelper.DestroyUi(player, NPCGUL);
-                CuiHelper.DestroyUi(player, NPCGUM);
-                CuiHelper.DestroyUi(player, NPCGUN);
-                CuiHelper.DestroyUi(player, NPCGUR);
-                CuiHelper.DestroyUi(player, NPCGUS);
-                CuiHelper.DestroyUi(player, NPCGUV);
+                foreach (string gui in guis)
+                {
+                    CuiHelper.DestroyUi(player, gui);
+                }
+
                 if (isopen.Contains(player.userID)) isopen.Remove(player.userID);
             }
         }
@@ -133,33 +135,36 @@ namespace Oxide.Plugins
         void OnNewSave()
         {
             if (!configData.Options.zeroOnWipe) return;
-            var allHumanoids = Resources.FindObjectsOfTypeAll<HumanoidPlayer>();
+            HumanoidPlayer[] allHumanoids = Resources.FindObjectsOfTypeAll<HumanoidPlayer>();
             foreach (HumanoidPlayer obj in allHumanoids)
             {
+                if (obj == null) continue;
                 obj.info.loc = Vector3.zero;
             }
         }
 
+        private void OnServerShutdown()
+        {
+            Unload();
+        }
+
         private void Unload()
         {
-            var allHumanoids = Resources.FindObjectsOfTypeAll<HumanoidPlayer>();
+            HumanoidPlayer[] allHumanoids = Resources.FindObjectsOfTypeAll<HumanoidPlayer>();
             foreach (HumanoidPlayer obj in allHumanoids)
             {
                 DoLog($"Deleting {obj.info.displayName}:{obj.info.userid}");
                 obj.movement.moving = false;
                 obj.player.Kill();
-                UnityEngine.GameObject.Destroy(obj.player);
+                UnityEngine.Object.Destroy(obj.player);
             }
             foreach (BasePlayer player in BasePlayer.activePlayerList)
             {
-                CuiHelper.DestroyUi(player, NPCGUI);
-                CuiHelper.DestroyUi(player, NPCGUK);
-                CuiHelper.DestroyUi(player, NPCGUL);
-                CuiHelper.DestroyUi(player, NPCGUM);
-                CuiHelper.DestroyUi(player, NPCGUN);
-                CuiHelper.DestroyUi(player, NPCGUR);
-                CuiHelper.DestroyUi(player, NPCGUS);
-                CuiHelper.DestroyUi(player, NPCGUV);
+                foreach (string gui in guis)
+                {
+                    CuiHelper.DestroyUi(player, gui);
+                }
+
                 if (isopen.Contains(player.userID)) isopen.Remove(player.userID);
             }
 
@@ -190,7 +195,16 @@ namespace Oxide.Plugins
         }
         private void SaveData()
         {
-            Interface.Oxide.DataFileSystem.WriteObject(Name + "/humanoids", npcs);
+            Dictionary<ulong, HumanoidInfo> tmpnpcs = new Dictionary<ulong, HumanoidInfo>();
+            foreach(var x in npcs)
+            {
+                if (!x.Value.ephemeral)
+                {
+                    tmpnpcs.Add(x.Key, x.Value);
+                }
+            }
+            Interface.Oxide.DataFileSystem.WriteObject(Name + "/humanoids", tmpnpcs);
+            tmpnpcs.Clear();
         }
 
         protected override void LoadDefaultMessages()
@@ -257,7 +271,7 @@ namespace Oxide.Plugins
 //        }
 
         #region Oxide Hooks
-        private void OnPlayerInput(BasePlayer player, InputState input)
+        private void OldOnPlayerInput(BasePlayer player, InputState input)
         {
             if (player == null || input == null) return;
             //            if (input.current.buttons > 0)
@@ -268,10 +282,10 @@ namespace Oxide.Plugins
             Vis.Entities(player.transform.position, 3f, pls);
             pls = pls.ToArray().OrderBy((d) => (d.transform.position - player.transform.position).sqrMagnitude).ToList();
 
-            for (var i = 0; i < pls.Count; i++)
+            for (int i = 0; i < pls.Count; i++)
             {
                 if (pls[i] == player) continue;
-                var hp = pls[i].GetComponent<HumanoidPlayer>();
+                HumanoidPlayer hp = pls[i].GetComponent<HumanoidPlayer>();
                 if (hp == null) continue;
 
                 if (hp.movement.sitting)
@@ -292,6 +306,37 @@ namespace Oxide.Plugins
             }
         }
 
+        private void OnPlayerInput(BasePlayer player, InputState input)
+        {
+            if (player == null || input == null) return;
+            //            if (input.current.buttons > 0)
+            //                DoLog($"OnPlayerInput: {input.current.buttons}");
+            if (!input.WasJustPressed(BUTTON.USE)) return;
+
+            RaycastHit hit;
+            if (Physics.Raycast(player.eyes.HeadRay(), out hit, 3f, playerMask))
+            {
+                BasePlayer pl = hit.GetEntity().ToPlayer();
+                HumanoidPlayer hp = pl.GetComponent<HumanoidPlayer>();
+                if (hp == null) return;
+
+                if (hp.movement.sitting)
+                {
+                    DoLog($"Trying to stand {hp.info.displayName}");
+                    hp.movement.Stand();
+                }
+                if (hp.info.entrypause)
+                {
+                    DoLog($"Trying to pause {hp.info.displayName}");
+                    hp.movement.Stop(true);
+                }
+                hp.LookTowards(player.transform.position, true);
+                //Message(player.IPlayer, hp.info.displayName);
+                Interface.Oxide.CallHook("OnUseNPC", hp.player, player);
+                SaveData();
+            }
+        }
+
         // More decisions needed here on what to do (return fire, etc.)
 //        object OnEntityTakeDamage(BaseCombatEntity entity, HitInfo hitinfo)
 //        {
@@ -299,7 +344,6 @@ namespace Oxide.Plugins
 //            if (hitinfo == null) return null;
 //
 //            var pl = hitinfo.HitEntity as BasePlayer;
-//            Puts("CUNTS");
 //            if (pl = null) return null;
 //            var hp = pl.GetComponentInParent<HumanoidPlayer>();
 //            if (hp = null) return null;
@@ -315,40 +359,49 @@ namespace Oxide.Plugins
         private object CanLootPlayer(BasePlayer target, BasePlayer player)
         {
             if (player == null || target == null) return null;
-            List<BaseEntity> pls = new List<BaseEntity>();
-            Vis.Entities(player.transform.position, 3f, pls);
-            foreach (BaseEntity pl in pls)
+            HumanoidPlayer hp = target.GetComponentInParent<HumanoidPlayer>();
+            if (hp != null && !hp.info.lootable)
             {
-                var hp = pl.GetComponentInParent<HumanoidPlayer>();
-                if (hp != null)// && hp.info.lootable)
-                {
-                    DoLog($"Player {player.displayName}:{player.UserIDString} looting NPC {hp.info.displayName}");
-                    NextTick(player.EndLooting);
-                    return null;
-                }
+                DoLog($"Player {player.displayName}:{player.UserIDString} looting NPC {hp.info.displayName}");
+                NextTick(player.EndLooting);
+                return true;
             }
-            return true;
+            return null;
         }
 
         private object CanLootEntity(BasePlayer player, LootableCorpse corpse)
         {
             if (player == null || corpse == null) return null;
-            List<BaseEntity> pls = new List<BaseEntity>();
-            Vis.Entities(player.transform.position, 3f, pls);
-            foreach (BaseEntity pl in pls)
+            HumanoidPlayer hp = corpse.GetComponentInParent<HumanoidPlayer>();
+            if (hp == null) return null;
+            DoLog($"Player {player.displayName}:{player.UserIDString} looting NPC {corpse.name}:{corpse.playerSteamID.ToString()}");
+            if (hp.info.lootable)
             {
-                var hp = pl.GetComponentInParent<HumanoidPlayer>();
-                if (hp == null) return null;
-                DoLog($"Player {player.displayName}:{player.UserIDString} looting NPC {corpse.name}:{corpse.playerSteamID.ToString()}");
-                if (hp.info.lootable)
-                {
-                    NextTick(player.EndLooting);
-                    return null;
-                }
-                return true;
+                NextTick(player.EndLooting);
+                return null;
             }
 
-            return null;
+            return true;
+        }
+
+        private void OnLootPlayer(BasePlayer looter, BasePlayer target)
+        {
+            if (npcs.ContainsKey(target.userID))
+            {
+                Interface.Oxide.CallHook("OnLootNPC", looter.inventory.loot, target, target.userID);
+            }
+        }
+
+        private void OnLootEntity(BasePlayer looter, BaseEntity entity)
+        {
+            if (looter == null || !(entity is PlayerCorpse)) return;
+            ulong userId = ((PlayerCorpse)entity).playerSteamID;
+            HumanoidInfo hi = null;
+            if (npcs.TryGetValue(userId, out hi))
+            if (hi != null)
+            {
+                Interface.Oxide.CallHook("OnLootNPC", looter.inventory.loot, entity, userId);
+            }
         }
 
         private object OnUserCommand(BasePlayer player, string command, string[] args)
@@ -368,7 +421,7 @@ namespace Oxide.Plugins
         [Command("noid")]
         void cmdNPC(IPlayer iplayer, string command, string[] args)
         {
-            var player = iplayer.Object as BasePlayer;
+            BasePlayer player = iplayer.Object as BasePlayer;
             if (args.Length > 0)
             {
                 string debug = string.Join(",", args); DoLog($"{debug}");
@@ -390,18 +443,19 @@ namespace Oxide.Plugins
                         break;
                     case "selclose":
                         CuiHelper.DestroyUi(player, NPCGUS);
+                        IsOpen(player.userID, false);
                         break;
                     case "list":
                         foreach (KeyValuePair<ulong, HumanoidInfo> pls in npcs)
                         {
-                            var ns = pls.Value.displayName + "(" + pls.Key.ToString() + ")";
+                            string ns = pls.Value.displayName + "(" + pls.Key.ToString() + ")";
                             Message(iplayer, ns);
                         }
                         break;
                     case "spawn":
                     case "create":
                     case "new":
-                        var npc = new HumanoidInfo(0, player.transform.position, player.transform.rotation);
+                        HumanoidInfo npc = new HumanoidInfo(0, player.transform.position, player.transform.rotation);
                         ulong x = 0;
                         SpawnNPC(npc, out x);
                         NPCSelectGUI(player);
@@ -440,7 +494,7 @@ namespace Oxide.Plugins
                                 RaycastHit hit;
                                 if (Physics.Raycast(player.eyes.HeadRay(), out hit, 3f, playerMask))
                                 {
-                                    var pl = hit.GetEntity().ToPlayer();
+                                    BasePlayer pl = hit.GetEntity().ToPlayer();
                                     foreach (KeyValuePair<ulong, HumanoidInfo> Npc in npcs)
                                     {
                                         if (Npc.Value.userid == pl.userID)
@@ -478,10 +532,10 @@ namespace Oxide.Plugins
                                 RaycastHit hit;
                                 if (Physics.Raycast(player.eyes.HeadRay(), out hit, 3f, playerMask))
                                 {
-                                    var pl = hit.GetEntity().ToPlayer();
+                                    BasePlayer pl = hit.GetEntity().ToPlayer();
                                     if (pl.userID > 0)
                                     {
-                                        var isnpc = npcs[pl.userID];
+                                        HumanoidInfo isnpc = npcs[pl.userID];
                                         if (isnpc != null)
                                         {
                                             RemoveNPC(isnpc);
@@ -526,11 +580,11 @@ namespace Oxide.Plugins
                         if (args.Length > 2)
                         {
                             CuiHelper.DestroyUi(player, NPCGUK);
-                            var userid = ulong.Parse(args[1]);
+                            ulong userid = ulong.Parse(args[1]);
                             npc = npcs[userid];
-                            var kitname = args[2];
+                            string kitname = args[2];
                             npc.kit = kitname;
-                            var hp = FindHumanoidByID(userid);
+                            HumanoidPlayer hp = FindHumanoidByID(userid);
                             SaveData();
                             RespawnNPC(hp.player);
                             NpcEditGUI(player, userid);
@@ -540,7 +594,7 @@ namespace Oxide.Plugins
                         if (args.Length > 2)
                         {
                             CuiHelper.DestroyUi(player, NPCGUM);
-                            var userid = ulong.Parse(args[1]);
+                            ulong userid = ulong.Parse(args[1]);
                             npc = npcs[userid];
                             switch(args[3])
                             {
@@ -552,7 +606,7 @@ namespace Oxide.Plugins
                                     npc.monstart = args[2];
                                     break;
                             }
-                            var hp = FindHumanoidByID(userid);
+                            HumanoidPlayer hp = FindHumanoidByID(userid);
                             SaveData();
                             RespawnNPC(hp.player);
                             NpcEditGUI(player, userid);
@@ -562,11 +616,11 @@ namespace Oxide.Plugins
                         if (args.Length > 2)
                         {
                             CuiHelper.DestroyUi(player, NPCGUR);
-                            var userid = ulong.Parse(args[1]);
+                            ulong userid = ulong.Parse(args[1]);
                             npc = npcs[userid];
-                            var roadname = args[2] + " " + args[3];
+                            string roadname = args[2] + " " + args[3];
                             npc.roadname = roadname;
-                            var hp = FindHumanoidByID(userid);
+                            HumanoidPlayer hp = FindHumanoidByID(userid);
                             SaveData();
                             RespawnNPC(hp.player);
                             NpcEditGUI(player, userid);
@@ -576,12 +630,12 @@ namespace Oxide.Plugins
                         if (args.Length > 2)
                         {
                             CuiHelper.DestroyUi(player, NPCGUL);
-                            var userid = ulong.Parse(args[1]);
+                            ulong userid = ulong.Parse(args[1]);
                             npc = npcs[userid];
                             LocoMode locomode;
                             Enum.TryParse(args[2], out locomode);
                             npc.locomode = locomode;
-                            var hp = FindHumanoidByID(userid);
+                            HumanoidPlayer hp = FindHumanoidByID(userid);
                             SaveData();
                             RespawnNPC(hp.player);
                             NpcEditGUI(player, userid);
@@ -596,7 +650,7 @@ namespace Oxide.Plugins
                             Quaternion newRot;
                             TryGetPlayerView(player, out newRot);
 
-                            var hp = FindHumanoidByID(npcid);
+                            HumanoidPlayer hp = FindHumanoidByID(npcid);
                             SetHumanoidInfo(npcid, "spawn", newSpawn);
                             //Teleport(hp.player, ns);
                             //hp.player.EndSleeping();
@@ -625,7 +679,7 @@ namespace Oxide.Plugins
                     case "npctoggle":
                         if (args.Length > 3)
                         {
-                            var userid = ulong.Parse(args[1]);
+                            ulong userid = ulong.Parse(args[1]);
                             string toset = args[2];
                             string newval = args[3] == "True" ? "false" : "true";
                             SetHumanoidInfo(userid, args[2], args[3]);
@@ -636,7 +690,7 @@ namespace Oxide.Plugins
                     case "npcset":
                         if (args.Length > 1)
                         {
-                            var userid = ulong.Parse(args[1]);
+                            ulong userid = ulong.Parse(args[1]);
                             SetHumanoidInfo(userid, args[2], args[4]);
                         }
                         break;
@@ -664,37 +718,41 @@ namespace Oxide.Plugins
         #endregion
 
         #region Our Inbound Hooks
-        private object IsHumanoid(BasePlayer player)
-        {
-            return player.GetComponentInParent<HumanoidPlayer>() != null;
-        }
-        private ulong SpawnHumanoid(Vector3 position, Quaternion currentRot, string name = "noid", ulong clone = 0)
+        private object IsHumanoid(BasePlayer player) => player.GetComponentInParent<HumanoidPlayer>() != null;
+        private ulong SpawnHumanoid(Vector3 position, Quaternion currentRot, string name = "noid", bool ephemeral = false, ulong clone = 0)
         {
             foreach (KeyValuePair<ulong, HumanoidInfo> pair in npcs)
             {
-                if (pair.Value.displayName == name && clone == 0) return pair.Key;
+                if (pair.Value.displayName == name && clone == 0)
+                {
+                    return pair.Key;
+                }
             }
-            //public HumanoidInfo(ulong uid, Vector3 position, Quaternion rotation)
+            Puts("GOT HERE");
+
             ulong npcid = 0;
-            HumanoidInfo hi = new HumanoidInfo(npcid, position, currentRot);
-            hi.displayName = name;
+            HumanoidInfo hi = new HumanoidInfo(npcid, position, currentRot)
+            {
+                displayName = name,
+                ephemeral = ephemeral
+            };
             SpawnNPC(hi, out npcid);
             return npcid;
         }
         private string GetHumanoidName(ulong npcid)
         {
-            Puts($"Looking for humanoid: {npcid.ToString()}");
-            var hp = FindHumanoidByID(npcid);
+            DoLog($"Looking for humanoid: {npcid.ToString()}");
+            HumanoidPlayer hp = FindHumanoidByID(npcid);
             if (hp == null) return null;
-            Puts($"Found humanoid: {hp.info.displayName}");
+            DoLog($"Found humanoid: {hp.info.displayName}");
             return hp.info.displayName;
         }
         private bool RemoveHumanoidById(ulong npcid)
         {
             DoLog($"RemoveHumanoidById called for {npcid.ToString()}");
-            var hp = FindHumanoidByID(npcid);
+            HumanoidPlayer hp = FindHumanoidByID(npcid);
             if (hp == null) return false;
-            var npc = hp.GetComponentInParent<BasePlayer>();
+            BasePlayer npc = hp.GetComponentInParent<BasePlayer>();
             if (npc == null) return false;
             KillNpc(npc);
             npcs.Remove(hp.info.userid);
@@ -704,9 +762,9 @@ namespace Oxide.Plugins
         private bool RemoveHumanoidByName(string name)
         {
             DoLog($"RemoveHumanoidByName called for {name}");
-            var hp = FindHumanoidByName(name);
+            HumanoidPlayer hp = FindHumanoidByName(name);
             if (hp == null) return false;
-            var npc = hp.GetComponentInParent<BasePlayer>();
+            BasePlayer npc = hp.GetComponentInParent<BasePlayer>();
             if (npc == null) return false;
             KillNpc(npc);
             npcs.Remove(hp.info.userid);
@@ -716,7 +774,7 @@ namespace Oxide.Plugins
         private void SetHumanoidInfo(ulong npcid, string toset, string data, string rot = null)
         {
             DoLog($"SetHumanoidInfo called for {npcid.ToString()} {toset},{data}");
-            var hp = FindHumanoidByID(npcid);
+            HumanoidPlayer hp = FindHumanoidByID(npcid);
             if (hp == null) return;
 
             switch (toset)
@@ -823,15 +881,15 @@ namespace Oxide.Plugins
                 case "rot":
                     break;
             }
-            Puts("Saving Data");
+            DoLog("Saving Data");
             SaveData();
-            Puts("Respawning");
+            DoLog("Respawning");
             RespawnNPC(hp.player);
         }
         private void GiveHumanoid(ulong npcid, string itemname, string loc = "wear")
         {
             Item item = ItemManager.CreateByName(itemname, 1, 0);
-            var npc = FindHumanoidByID(npcid);
+            HumanoidPlayer npc = FindHumanoidByID(npcid);
             DoLog($"GiveHumanoid called: {npc.info.displayName}, {itemname}, {loc}");
             if (npc.player != null)
             {
@@ -855,7 +913,7 @@ namespace Oxide.Plugins
             //Puts($"npcPlayNote called for {npcid.ToString()}");
             if (npcs.ContainsKey(npcid))
             {
-                var hp = FindHumanoidByID(npcid);
+                HumanoidPlayer hp = FindHumanoidByID(npcid);
                 if (hp.info.band != band) return false;
                 hp.PlayNote(note, sharp, octave, noteval, duration);
             }
@@ -899,12 +957,12 @@ namespace Oxide.Plugins
                     row = 0;
                     col++;
                 }
-                var hBand = npc.Value.band.ToString();
+                string hBand = npc.Value.band.ToString();
                 if (hBand == "99") continue;
                 string color = "#2244cc";
                 if (hBand != "0") color = "#22cc44";
 
-                var hName = npc.Value.displayName;
+                string hName = npc.Value.displayName;
                 float[] posb = GetButtonPositionP(row, col);
                 UI.Button(ref container, NPCGUS, UI.Color(color, 1f), hName, 12, $"{posb[0]} {posb[1]}", $"{posb[0] + ((posb[2] - posb[0]) / 2)} {posb[3]}", $"noid edit {npc.Value.displayName}");
                 row++;
@@ -1196,7 +1254,7 @@ namespace Oxide.Plugins
             if (road == null) road = Lang("none");
             foreach (KeyValuePair<string, Road> roadinfo in roads)
             {
-                Puts(roadinfo.Key);
+                DoLog(roadinfo.Key);
                 if (row > 10)
                 {
                     row = 0;
@@ -1232,7 +1290,7 @@ namespace Oxide.Plugins
             int col = 0;
             int row = 0;
 
-            var hp = FindHumanoidByID(npc);
+            HumanoidPlayer hp = FindHumanoidByID(npc);
             foreach (LocoMode mode in (LocoMode[]) Enum.GetValues(typeof(LocoMode)))
             {
                 float[] posb = GetButtonPositionP(row, col);
@@ -1264,20 +1322,16 @@ namespace Oxide.Plugins
             }
         }
 
-        // This is critical to the speed of operations on FindHumanoidByID/Name
-        private Dictionary<ulong, HumanoidPlayer> hpcache = new Dictionary<ulong, HumanoidPlayer>();
-        private Dictionary<string, HumanoidPlayer> hpcachen = new Dictionary<string, HumanoidPlayer>();
-
         private HumanoidPlayer FindHumanoidByID(ulong userid, bool playerid = false)
         {
             HumanoidPlayer hp;
-            if (hpcache.TryGetValue(userid, out hp)) return hp;
-            var allHumanoids = Resources.FindObjectsOfTypeAll<HumanoidPlayer>();
+            if (hpcacheid.TryGetValue(userid, out hp)) return hp;
+            HumanoidPlayer[] allHumanoids = Resources.FindObjectsOfTypeAll<HumanoidPlayer>();
             foreach (HumanoidPlayer humanplayer in allHumanoids)
             {
                 DoLog($"Is {humanplayer.player.displayName} a Humanoid?");
                 if (humanplayer.player.userID != userid && humanplayer.info.userid != userid) continue;
-                hpcache[userid] = humanplayer;
+                hpcacheid[userid] = humanplayer;
                 return humanplayer;
             }
             return null;
@@ -1286,12 +1340,12 @@ namespace Oxide.Plugins
         public HumanoidPlayer FindHumanoidByName(string name)
         {
             HumanoidPlayer hp;
-            if (hpcachen.TryGetValue(name, out hp)) return hp;
-            var allHumanoids = Resources.FindObjectsOfTypeAll<HumanoidPlayer>();
+            if (hpcachenm.TryGetValue(name, out hp)) return hp;
+            HumanoidPlayer[] allHumanoids = Resources.FindObjectsOfTypeAll<HumanoidPlayer>();
             foreach (HumanoidPlayer humanplayer in allHumanoids)
             {
                 if (humanplayer.info.displayName != name) continue;
-                hpcachen[name] = humanplayer;
+                hpcachenm[name] = humanplayer;
                 return humanplayer;
             }
             return null;
@@ -1305,9 +1359,9 @@ namespace Oxide.Plugins
                 //npcs[info.userid] = null;
                 npcs.Remove(info.userid);
             }
-            hpcache.Remove(info.userid);
-            hpcachen.Remove(info.displayName);
-            var npc = FindHumanoidByID(info.userid);
+            hpcacheid.Remove(info.userid);
+            hpcachenm.Remove(info.displayName);
+            HumanoidPlayer npc = FindHumanoidByID(info.userid);
             if (npc?.player != null && !npc.player.IsDestroyed)
             {
                 npc.player.KillMessage();
@@ -1317,13 +1371,13 @@ namespace Oxide.Plugins
         public void RespawnNPC(BasePlayer player)
         {
             DoLog($"Attempting to respawn humanoid...");
-            var n = FindHumanoidByID(player.userID, true);
-            var info = n.info;
+            HumanoidPlayer n = FindHumanoidByID(player.userID, true);
+            HumanoidInfo info = n.info;
             if (player != null && info != null)
             {
                 KillNpc(player);
-                hpcache.Remove(player.userID);
-                hpcachen.Remove(player.name);
+                hpcacheid.Remove(player.userID);
+                hpcachenm.Remove(player.name);
                 ulong x = 0;
                 SpawnNPC(info, out x);
                 player.EndSleeping();
@@ -1331,7 +1385,7 @@ namespace Oxide.Plugins
         }
         private void KillNpc(BasePlayer player)
         {
-            var players = new List<BasePlayer>();
+            List<BasePlayer> players = new List<BasePlayer>();
             Vis.Entities(player.transform.position, 0.01f, players);
             foreach (BasePlayer pl in players)
             {
@@ -1346,9 +1400,9 @@ namespace Oxide.Plugins
                 info.userid = (ulong)UnityEngine.Random.Range(0, 2147483647);
             }
 
-            var player = GameManager.server.CreateEntity("assets/prefabs/player/player.prefab", info.loc, info.rot).ToPlayer();
+            BasePlayer player = GameManager.server.CreateEntity("assets/prefabs/player/player.prefab", info.loc, info.rot).ToPlayer();
             DoLog($"Player object created...");
-            var npc = player.gameObject.AddComponent<HumanoidPlayer>();
+            HumanoidPlayer npc = player.gameObject.AddComponent<HumanoidPlayer>();
             DoLog($"Humanoid object added to player...");
             npc.SetInfo(info);
 
@@ -1447,6 +1501,7 @@ namespace Oxide.Plugins
             public bool canride = false;
             public bool canfly = false;
 
+            public bool ephemeral = false;
             public bool hostile = false;
             public bool ahostile = false;
             public bool defend = false;
@@ -1514,7 +1569,7 @@ namespace Oxide.Plugins
                 canride = false;
                 //damageInterval = 2;
 
-                for (var i = 0; i < (int)DamageType.LAST; i++)
+                for (int i = 0; i < (int)DamageType.LAST; i++)
                 {
                     protections[(DamageType)i] = 0f;
                 }
@@ -1671,8 +1726,8 @@ namespace Oxide.Plugins
                     waypointDone = 0f;
                 }
                 //Paths.RemoveAt(0);
-                var d = Vector3.Distance(EndPos, StartPos);
-                var ts = Time.realtimeSinceStartup;
+                float d = Vector3.Distance(EndPos, StartPos);
+                float ts = Time.realtimeSinceStartup;
 //                Instance.DoLog($"SetMovementPoint({currentWaypoint.ToString()}) Start: {StartPos.ToString()}, current {npc.info.loc.ToString()}, End: {endpos.ToString()}), time: {ts}");
             }
 
@@ -1711,23 +1766,23 @@ namespace Oxide.Plugins
 
             private void FiringEffect(BaseCombatEntity target, BaseProjectile weapon, float da, bool miss)
             {
-                var component = weapon.primaryMagazine.ammoType.GetComponent<ItemModProjectile>();
-                var source = npc.player.transform.position + npc.player.GetOffset();
+                ItemModProjectile component = weapon.primaryMagazine.ammoType.GetComponent<ItemModProjectile>();
+                Vector3 source = npc.player.transform.position + npc.player.GetOffset();
                 if (weapon.MuzzlePoint != null)
                 {
                     source += Quaternion.LookRotation(target.transform.position - npc.player.transform.position) * weapon.MuzzlePoint.position;
                 }
-                var direction = (target.transform.position + npc.player.GetOffset() - source).normalized;
-                var vector32 = direction * (component.projectileVelocity * weapon.projectileVelocityScale);
+                Vector3 direction = (target.transform.position + npc.player.GetOffset() - source).normalized;
+                Vector3 vector32 = direction * (component.projectileVelocity * weapon.projectileVelocityScale);
 
                 if (miss)
                 {
-                    var aimCone = weapon.GetAimCone();
+                    float aimCone = weapon.GetAimCone();
                     vector32 += Quaternion.Euler(UnityEngine.Random.Range((float)(-aimCone * 0.5), aimCone * 0.5f), UnityEngine.Random.Range((float)(-aimCone * 0.5), aimCone * 0.5f), UnityEngine.Random.Range((float)(-aimCone * 0.5), aimCone * 0.5f)) * npc.player.eyes.HeadForward();
                 }
 
                 Effect.server.Run(weapon.attackFX.resourcePath, weapon, StringPool.Get(weapon.handBone), Vector3.zero, Vector3.forward);
-                var effect = new Effect();
+                Effect effect = new Effect();
                 effect.Init(Effect.Type.Projectile, source, vector32.normalized);
                 effect.scale = vector32.magnitude;
                 effect.pooledString = component.projectileObject.resourcePath;
@@ -1795,7 +1850,7 @@ namespace Oxide.Plugins
                 npc.LookTowards(EndPos);
                 npc.player.MovePosition(currPos);
                 //npc.player.SendNetworkUpdate();
-                var newEyesPos = currPos + new Vector3(0, 1.6f, 0);
+                Vector3 newEyesPos = currPos + new Vector3(0, 1.6f, 0);
                 npc.player.eyes.position.Set(newEyesPos.x, newEyesPos.y, newEyesPos.z);
                 npc.player.EnablePlayerCollider();
 
@@ -1849,7 +1904,7 @@ namespace Oxide.Plugins
             {
                 if (sitting)
                 {
-                    var mounted = npc.player.GetMounted();
+                    BaseMountable mounted = npc.player.GetMounted();
                     mounted.DismountPlayer(npc.player);
                     mounted.SetFlag(BaseEntity.Flags.Busy, false, false);
                     sitting = false;
@@ -1951,7 +2006,7 @@ namespace Oxide.Plugins
             public void Ride()
             {
                 if (npc.info.canride == false) return;
-                var horse = npc.player.GetMountedVehicle() as RidableHorse;
+                RidableHorse horse = npc.player.GetMountedVehicle() as RidableHorse;
                 if (horse == null)
                 {
                     // Find a place to sit
@@ -1996,7 +2051,7 @@ namespace Oxide.Plugins
 
                 bool hasMoved = targetDir != Vector3.zero && Vector3.Distance(horse.transform.position, npc.info.loc) > 0.5f;
                 bool isVisible = npc.target != null && npc.target.IsVisible(npc.player.eyes.position, (npc.target as BasePlayer).eyes.position, 200);
-                var randompos = UnityEngine.Random.insideUnitCircle * npc.info.damageDistance;
+                Vector2 randompos = UnityEngine.Random.insideUnitCircle * npc.info.damageDistance;
                 if (npc.target != null)
                 {
                     if (isVisible)
@@ -2069,13 +2124,13 @@ namespace Oxide.Plugins
             public void UpdateWaypoints()
             {
                 if (string.IsNullOrEmpty(npc.info.waypoint)) return;
-                var cwaypoints = Interface.Oxide.CallHook("GetWaypointsList", npc.info.waypoint);
+                object cwaypoints = Interface.Oxide.CallHook("GetWaypointsList", npc.info.waypoint);
                 if (cwaypoints == null) cachedWaypoints = null;
                 else
                 {
                     cachedWaypoints = new List<WaypointInfo>();
-                    var lastPos = npc.info.loc;
-                    var speed = GetSpeed();
+                    Vector3 lastPos = npc.info.loc;
+                    float speed = GetSpeed();
                     foreach (object cwaypoint in (List<object>)cwaypoints)
                     {
                         foreach (KeyValuePair<Vector3, float> pair in (Dictionary<Vector3, float>)cwaypoint)
@@ -2092,7 +2147,7 @@ namespace Oxide.Plugins
 
             public List<Item> GetAmmo(Item item)
             {
-                var ammos = new List<Item>();
+                List<Item> ammos = new List<Item>();
                 AmmoTypes ammoType;
                 if (!ammoTypes.TryGetValue(item.info.shortname, out ammoType)) return ammos;
                 npc.player.inventory.FindAmmo(ammos, ammoType);
@@ -2138,7 +2193,7 @@ namespace Oxide.Plugins
                     // Find closest road start
                     foreach (KeyValuePair<string, Road> road in roads)
                     {
-                        var currdist = Vector3.Distance(monPos[npc.info.monstart], road.Value.points[0]);
+                        float currdist = Vector3.Distance(monPos[npc.info.monstart], road.Value.points[0]);
                         distance = Math.Min(distance, currdist);
                         //Instance.DoLog($"[HumanoidMovement] {road.Key} distance to {npc.info.monstart} == {currdist.ToString()}");
 
@@ -2254,7 +2309,7 @@ namespace Oxide.Plugins
 
             public bool IsLayerBlocked(Vector3 position, float radius, int mask)
             {
-                var colliders = Pool.GetList<Collider>();
+                List<Collider> colliders = Pool.GetList<Collider>();
                 Vis.Colliders(position, radius, colliders, mask, QueryTriggerInteraction.Collide);
 
                 bool blocked = colliders.Count > 0;
@@ -2266,8 +2321,8 @@ namespace Oxide.Plugins
 
             private bool CanSee()
             {
-                var weapon = npc.player.GetActiveItem()?.GetHeldEntity() as BaseProjectile;
-                var pos = npc.info.loc + npc.player.GetOffset();
+                BaseProjectile weapon = npc.player.GetActiveItem()?.GetHeldEntity() as BaseProjectile;
+                Vector3 pos = npc.info.loc + npc.player.GetOffset();
                 if (weapon?.MuzzlePoint != null)
                 {
                     pos += Quaternion.LookRotation(npc.info.targetloc - npc.info.loc) * weapon.MuzzlePoint.position;
@@ -2510,7 +2565,7 @@ namespace Oxide.Plugins
                     Instance.DoLog($"[HumanoidPlayer]   setting eyes...");
                     player.eyes = player.eyes ?? player.GetComponent<PlayerEyes>();
                     //player.eyes.position = info.spawnInfo.position + new Vector3(0, 1.6f, 0);
-                    var newEyes = info.loc + new Vector3(0, 1.6f, 0);
+                    Vector3 newEyes = info.loc + new Vector3(0, 1.6f, 0);
                     Instance.DoLog($"[HumanoidPlayer]   setting eye position...");
                     player.eyes.position.Set(newEyes.x, newEyes.y, newEyes.z);
                     Instance.DoLog($"[HumanoidPlayer]   ending sleep...");
@@ -2594,7 +2649,7 @@ namespace Oxide.Plugins
             public bool HasAmmo(Item item)
             {
                 if (!info.needsammo) return true;
-                var weapon = item.GetHeldEntity() as BaseProjectile;
+                BaseProjectile weapon = item.GetHeldEntity() as BaseProjectile;
                 if (weapon == null) return true;
                 return weapon.primaryMagazine.contents > 0 || weapon.primaryMagazine.CanReload(player);
             }
@@ -2638,7 +2693,7 @@ namespace Oxide.Plugins
                     instr.SetVisibleWhileHolstered(true);
                     instr.SetHeld(true);
                     instr.UpdateHeldItemVisibility();
-                    var item = instr.GetItem();
+                    Item item = instr.GetItem();
                     SetActive(item.uid);
                     itool = instr as InstrumentTool; // THIS ONE!
                     instrument = instr.ShortPrefabName;
@@ -2719,7 +2774,7 @@ namespace Oxide.Plugins
         {
             public override void WriteJson(JsonWriter writer, object value, JsonSerializer serializer)
             {
-                var quaternion = (Quaternion)value;
+                Quaternion quaternion = (Quaternion)value;
                 writer.WriteValue($"{quaternion.x} {quaternion.y} {quaternion.z} {quaternion.w}");
             }
 
@@ -2727,10 +2782,10 @@ namespace Oxide.Plugins
             {
                 if (reader.TokenType == JsonToken.String)
                 {
-                    var values = reader.Value.ToString().Trim().Split(' ');
+                    string[] values = reader.Value.ToString().Trim().Split(' ');
                     return new Quaternion(Convert.ToSingle(values[0]), Convert.ToSingle(values[1]), Convert.ToSingle(values[2]), Convert.ToSingle(values[3]));
                 }
-                var o = JObject.Load(reader);
+                JObject o = JObject.Load(reader);
                 return new Quaternion(Convert.ToSingle(o["rx"]), Convert.ToSingle(o["ry"]), Convert.ToSingle(o["rz"]), Convert.ToSingle(o["rw"]));
             }
 
@@ -2744,7 +2799,7 @@ namespace Oxide.Plugins
         {
             public override void WriteJson(JsonWriter writer, object value, JsonSerializer serializer)
             {
-                var vector =(Vector3)value;
+                Vector3 vector =(Vector3)value;
                 writer.WriteValue($"{vector.x} {vector.y} {vector.z}");
             }
 
@@ -2752,10 +2807,10 @@ namespace Oxide.Plugins
             {
                 if (reader.TokenType == JsonToken.String)
                 {
-                    var values = reader.Value.ToString().Trim().Split(' ');
+                    string[] values = reader.Value.ToString().Trim().Split(' ');
                     return new Vector3(Convert.ToSingle(values[0]), Convert.ToSingle(values[1]), Convert.ToSingle(values[2]));
                 }
-                var o = JObject.Load(reader);
+                JObject o = JObject.Load(reader);
                 return new Vector3(Convert.ToSingle(o["x"]), Convert.ToSingle(o["y"]), Convert.ToSingle(o["z"]));
             }
 
@@ -3129,7 +3184,7 @@ namespace Oxide.Plugins
         protected override void LoadDefaultConfig()
         {
             Puts("Creating new config file.");
-            var config = new ConfigData
+            ConfigData config = new ConfigData
             {
                 Version = Version
             };
