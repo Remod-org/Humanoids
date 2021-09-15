@@ -101,6 +101,18 @@ namespace Oxide.Plugins
             Instance = this;
 
             LoadData();
+
+            HumanoidPlayer[] allHumanoids = Resources.FindObjectsOfTypeAll<HumanoidPlayer>();
+            foreach (HumanoidPlayer obj in allHumanoids)
+            {
+                UnityEngine.Object.Destroy(obj);
+            }
+            HumanoidMovement[] allMove = Resources.FindObjectsOfTypeAll<HumanoidMovement>();
+            foreach (HumanoidMovement obj in allMove)
+            {
+                UnityEngine.Object.Destroy(obj);
+            }
+
             Dictionary<ulong, HumanoidInfo> tmpnpcs = new Dictionary<ulong, HumanoidInfo>(npcs);
             foreach (KeyValuePair<ulong, HumanoidInfo> npc in tmpnpcs)
             {
@@ -143,21 +155,13 @@ namespace Oxide.Plugins
             }
         }
 
-        private void OnServerShutdown()
-        {
-            Unload();
-        }
+        //private void OnServerShutdown()
+        //{
+        //    Unload();
+        //}
 
         private void Unload()
         {
-            HumanoidPlayer[] allHumanoids = Resources.FindObjectsOfTypeAll<HumanoidPlayer>();
-            foreach (HumanoidPlayer obj in allHumanoids)
-            {
-                DoLog($"Deleting {obj.info.displayName}:{obj.info.userid}");
-                obj.movement.moving = false;
-                obj.player.Kill();
-                UnityEngine.Object.Destroy(obj.player);
-            }
             foreach (BasePlayer player in BasePlayer.activePlayerList)
             {
                 foreach (string gui in guis)
@@ -166,6 +170,14 @@ namespace Oxide.Plugins
                 }
 
                 if (isopen.Contains(player.userID)) isopen.Remove(player.userID);
+            }
+
+            HumanoidPlayer[] hp = Resources.FindObjectsOfTypeAll<HumanoidPlayer>();
+            foreach (HumanoidPlayer obj in hp)
+            {
+                Puts($"Killing player object {obj.player.userID.ToString()}");
+                obj.movement.Stand();
+                obj.GetComponent<BasePlayer>().Kill();
             }
 
             //SaveData();
@@ -355,6 +367,43 @@ namespace Oxide.Plugins
 //
 //            return null;
 //        }
+        private void OnEntityTakeDamage(BaseCombatEntity entity, HitInfo hitinfo)
+        {
+            var hp = entity.GetComponent<HumanoidPlayer>();
+            if (hp != null)
+            {
+                DoLog($"{hitinfo.HitEntity.ShortPrefabName} attacking Humanoid {hp.info.displayName}");
+                if (hitinfo.Initiator is BaseCombatEntity && !(hitinfo.Initiator is Barricade) && hp.info.defend)
+                {
+                    DoLog("Setting attacked to true");
+                    hp.movement.attacked = true;
+                }
+                //if (hp.info.message_hurt != null && hp.info.message_hurt.Count != 0)
+                //{
+                //    if (hitinfo.InitiatorPlayer != null)
+                //    {
+                //        SendMessage(hp, hitinfo.InitiatorPlayer, GetRandomMessage(hp.info.message_hurt));
+                //    }
+                //}
+                Interface.Oxide.CallHook("OnHitNPC", entity.GetComponent<BaseCombatEntity>(), hitinfo);
+                if (hp.info.invulnerable)
+                {
+                    hitinfo.damageTypes = new DamageTypeList();
+                    hitinfo.DoHitEffects = false;
+                    hitinfo.HitMaterial = 0;
+                }
+                else
+                {
+                    hp.protection.Scale(hitinfo.damageTypes);
+                }
+
+                if (hp.movement.sitting && !hp.movement.riding)
+                {
+                    hp.movement.Stand();
+                }
+                //hp.movement.Evade();
+            }
+        }
 
         private object CanLootPlayer(BasePlayer target, BasePlayer player)
         {
@@ -465,11 +514,7 @@ namespace Oxide.Plugins
                             ulong npcid = 0;
                             if (args.Length > 1)
                             {
-                                try
-                                {
-                                    npcid = ulong.Parse(args[1]);
-                                }
-                                catch { }
+                                ulong.TryParse(args[1], out npcid);
                                 if (npcid > 0)
                                 {
                                     NpcEditGUI(player, npcid);
@@ -477,10 +522,13 @@ namespace Oxide.Plugins
                                 }
                                 else
                                 {
+                                    List<string> newarg = new List<string>(args);
+                                    newarg.RemoveAt(0);
+                                    string nom = string.Join(" ", newarg);
                                     foreach (KeyValuePair<ulong, HumanoidInfo> pls in npcs)
                                     {
-                                        DoLog($"Checking match to {pls.Value.displayName}");
-                                        if (pls.Value.displayName.ToLower() == args[1].ToLower())
+                                        DoLog($"Checking match of {nom} to {pls.Value.displayName}");
+                                        if (pls.Value.displayName.ToLower() == nom.ToLower())
                                         {
                                             NpcEditGUI(player, pls.Value.userid);
                                             break;
@@ -718,7 +766,7 @@ namespace Oxide.Plugins
         #endregion
 
         #region Our Inbound Hooks
-        private object IsHumanoid(BasePlayer player) => player.GetComponentInParent<HumanoidPlayer>() != null;
+        private bool IsHumanoid(BasePlayer player) => player.GetComponentInParent<HumanoidPlayer>() != null;
         private ulong SpawnHumanoid(Vector3 position, Quaternion currentRot, string name = "noid", bool ephemeral = false, ulong clone = 0)
         {
             foreach (KeyValuePair<ulong, HumanoidInfo> pair in npcs)
@@ -1399,7 +1447,12 @@ namespace Oxide.Plugins
             {
                 info.userid = (ulong)UnityEngine.Random.Range(0, 2147483647);
             }
-
+            List<BasePlayer> lurkers = new List<BasePlayer>();
+            Vis.Entities(info.loc, 1, lurkers);
+            foreach (BasePlayer lurker in lurkers)
+            {
+                if (lurker.displayName == info.displayName) lurker.Kill();
+            }
             BasePlayer player = GameManager.server.CreateEntity("assets/prefabs/player/player.prefab", info.loc, info.rot).ToPlayer();
             DoLog($"Player object created...");
             HumanoidPlayer npc = player.gameObject.AddComponent<HumanoidPlayer>();
@@ -1634,18 +1687,13 @@ namespace Oxide.Plugins
 
             public void FixedUpdate()
             {
-                if (npc.player.IsWounded() || npc.player.IsDead())
+                if (npc.player == null) return;
+                if (attacked && npc.info.defend && npc.info.locomode != LocoMode.Defend)
                 {
-                    if (attacked & npc.info.defend)
-                    {
-                        npc.info.defaultLoco = npc.info.locomode;
-                        npc.info.locomode = LocoMode.Defend;
-                        DetermineMove();
-                    }
-                    else
-                    {
-                        Stop();
-                    }
+                    Instance.Puts($"Humanoid {npc.player.displayName} was attacked, changing locomode to Defend!");
+                    npc.info.defaultLoco = npc.info.locomode;
+                    npc.info.locomode = LocoMode.Defend;
+                    DetermineMove();
                 }
                 else
                 {
@@ -2381,7 +2429,7 @@ namespace Oxide.Plugins
                 //                {
                 //                    npc.EquipFirstInstrument();
                 //                }
-                if (npc.info.hostile || npc.info.ahostile)
+                if (npc.info.hostile || npc.info.ahostile || attacked)
                 {
                     npc.EquipFirstWeapon();
                 }
@@ -2668,6 +2716,7 @@ namespace Oxide.Plugins
                 {
                     UnequipAll();
                     weapon.SetHeld(true);
+                    Instance.Puts($"EquipFirstWeapon: Successfully equipped {weapon.name} for NPC {player.displayName}({player.userID.ToString()})");
                 }
                 return weapon;
             }
