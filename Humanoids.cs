@@ -377,6 +377,7 @@ namespace Oxide.Plugins
                 {
                     DoLog("Setting attacked to true");
                     hp.movement.attacked = true;
+                    hp.movement.attackEntity = hitinfo.Initiator as BaseCombatEntity;
                 }
                 //if (hp.info.message_hurt != null && hp.info.message_hurt.Count != 0)
                 //{
@@ -1583,6 +1584,7 @@ namespace Oxide.Plugins
             public LocoMode locomode;
             public LocoMode defaultLoco;
             public string waypoint;
+            public bool holdingWeapon;
 
             public int band = 0;
 
@@ -1671,7 +1673,7 @@ namespace Oxide.Plugins
 
             public List<Vector3> pathFinding;
 
-            private HeldEntity firstWeapon = null;
+            public HeldEntity firstWeapon = null;
             public bool startmoving = true;
 
             public float wpupdatetime = 0;
@@ -1694,6 +1696,7 @@ namespace Oxide.Plugins
                     npc.info.defaultLoco = npc.info.locomode;
                     npc.info.locomode = LocoMode.Defend;
                     DetermineMove();
+                    Move();
                 }
                 else
                 {
@@ -1793,22 +1796,22 @@ namespace Oxide.Plugins
                     return;
                 }
 
-                HeldEntity weapon = npc.player.GetHeldEntity() ?? null;
-                if (weapon as BaseProjectile == null)
+                //HeldEntity weapon = npc.player.GetHeldEntity() ?? null;
+                if (firstWeapon as BaseProjectile == null)
                 {
-                    weapon = npc.EquipFirstWeapon();
-                    if (weapon == null)
+                    npc.EquipFirstWeapon();
+                    if (firstWeapon == null)
                     {
-                        weapon = npc.EquipFirstTool();
+                        firstWeapon = npc.EquipFirstTool();
                     }
                 }
-                if (weapon == null)
+                if (firstWeapon == null)
                 {
                     return; // If only you could smack a player with a fish...
                 }
 
                 npc.LookTowards(attackEntity.transform.position);
-                FiringEffect(attackEntity, weapon as BaseProjectile, npc.info.damageAmount, false); // miss is based on a hitchance calc. false for now
+                FiringEffect(attackEntity, firstWeapon as BaseProjectile, npc.info.damageAmount, false); // miss is based on a hitchance calc. false for now
                 DoAttack();
             }
 
@@ -2429,10 +2432,10 @@ namespace Oxide.Plugins
                 //                {
                 //                    npc.EquipFirstInstrument();
                 //                }
-                if (npc.info.hostile || npc.info.ahostile || attacked)
-                {
-                    npc.EquipFirstWeapon();
-                }
+                //if (npc.info.hostile || npc.info.ahostile || attacked)
+                //{
+                //    npc.EquipFirstWeapon();
+                //}
                 //else
                 //{
                 //    npc.EquipFirstTool();
@@ -2620,6 +2623,7 @@ namespace Oxide.Plugins
                     player.EndSleeping();
                     protection.Clear();
                 }
+                info.holdingWeapon = false;
                 if (movement != null) Destroy(movement);
                 Instance.DoLog($"[HumanoidPlayer] Adding player movement to {player.displayName}...");
                 movement = player.gameObject.AddComponent<HumanoidMovement>();
@@ -2641,19 +2645,6 @@ namespace Oxide.Plugins
                 player.viewAngles = viewAngles.eulerAngles;
                 info.rot = viewAngles;
                 player.SendNetworkUpdate();
-            }
-
-            public HeldEntity GetFirstWeapon()
-            {
-                if (player.inventory?.containerBelt == null) return null;
-                foreach (Item item in player.inventory.containerBelt.itemList)
-                {
-                    if (item.CanBeHeld() && HasAmmo(item) && (item.info.category == ItemCategory.Weapon))
-                    {
-                        return item.GetHeldEntity() as HeldEntity;
-                    }
-                }
-                return null;
             }
 
             public HeldEntity GetFirstTool()
@@ -2709,13 +2700,31 @@ namespace Oxide.Plugins
                 player.SignalBroadcast(BaseEntity.Signal.Reload, string.Empty);
             }
 
+            public HeldEntity GetFirstWeapon()
+            {
+                if (player.inventory?.containerBelt == null) return null;
+                foreach (Item item in player.inventory.containerBelt.itemList)
+                {
+                    if (item.CanBeHeld() && HasAmmo(item) && (item.info.category == ItemCategory.Weapon))
+                    {
+                        movement.firstWeapon = item.GetHeldEntity() as HeldEntity;
+                        return movement.firstWeapon;
+                    }
+                }
+                return null;
+            }
             public HeldEntity EquipFirstWeapon()
             {
+                if (info.holdingWeapon)
+                {
+                    return movement.firstWeapon;
+                }
                 HeldEntity weapon = GetFirstWeapon();
                 if (weapon != null)
                 {
                     UnequipAll();
                     weapon.SetHeld(true);
+                    info.holdingWeapon = true;
                     Instance.Puts($"EquipFirstWeapon: Successfully equipped {weapon.name} for NPC {player.displayName}({player.userID.ToString()})");
                 }
                 return weapon;
