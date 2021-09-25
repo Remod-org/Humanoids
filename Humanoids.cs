@@ -35,6 +35,7 @@ using System.Globalization;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text.RegularExpressions;
+using System.Timers;
 using UnityEngine;
 
 namespace Oxide.Plugins
@@ -80,6 +81,7 @@ namespace Oxide.Plugins
         private readonly static int groundLayer = LayerMask.GetMask("Construction", "Terrain", "World");
         private readonly static int obstructionMask = LayerMask.GetMask(new[] { "Construction", "Deployed", "Clutter" });
         private readonly static int terrainMask = LayerMask.GetMask(new[] { "Terrain", "Tree" });
+        private static int targetLayer;
         #endregion
 
         #region Message
@@ -98,6 +100,7 @@ namespace Oxide.Plugins
             LoadConfigVariables();
             AddCovalenceCommand("noid", "cmdNPC");
 
+            targetLayer = LayerMask.GetMask("Player (Server)", "AI", "Deployed", "Construction");
             Instance = this;
 
             LoadData();
@@ -349,33 +352,52 @@ namespace Oxide.Plugins
             }
         }
 
-        // More decisions needed here on what to do (return fire, etc.)
-//        object OnEntityTakeDamage(BaseCombatEntity entity, HitInfo hitinfo)
-//        {
-//            if (entity == null) return null;
-//            if (hitinfo == null) return null;
-//
-//            var pl = hitinfo.HitEntity as BasePlayer;
-//            if (pl = null) return null;
-//            var hp = pl.GetComponentInParent<HumanoidPlayer>();
-//            if (hp = null) return null;
-//
-//            if (hp.info.invulnerable) return true;
-//
-//            hp.movement.attacked = true;
-//            hp.movement.attackEntity = hitinfo.HitEntity as BaseCombatEntity;
-//
-//            return null;
-//        }
-        private void OnEntityTakeDamage(BaseCombatEntity entity, HitInfo hitinfo)
+        private object CanHelicopterTarget(PatrolHelicopterAI heli, BasePlayer player)
         {
+            if (player == null) return null;
+            if (IsHumanoid(player)) return true;
+            return null;
+        }
+
+        private object CanHelicopterStrafeTarget(PatrolHelicopterAI heli, BasePlayer player)
+        {
+            if (player == null) return null;
+            if (IsHumanoid(player)) return true;
+            return null;
+        }
+
+        private object OnHelicopterTarget(HelicopterTurret turret, BaseCombatEntity entity)
+        {
+            var player = entity.ToPlayer();
+            if (player == null) return null;
+            if (IsHumanoid(player)) return true;
+            return null;
+        }
+
+        private object OnEntityTakeDamage(BaseCombatEntity entity, HitInfo hitinfo)
+        {
+            if (entity == null) return null;
+            if (hitinfo == null) return null;
             var hp = entity.GetComponent<HumanoidPlayer>();
             if (hp != null)
             {
-                DoLog($"{hitinfo.HitEntity.ShortPrefabName} attacking Humanoid {hp.info.displayName}");
+                var atpl = hitinfo.Initiator as BasePlayer;
+                if (atpl == hp.player)
+                {
+                    DoLog($"Humanoid {hp.info.displayName} self damage, skipping...");
+                    return true;
+                }
+                if (atpl != null)
+                {
+                    DoLog($"Player {atpl.displayName} attacking Humanoid {hp.info.displayName}");
+                }
+                else
+                {
+                    DoLog($"{hitinfo.Initiator.ShortPrefabName} attacking Humanoid {hp.info.displayName}");
+                }
                 if (hitinfo.Initiator is BaseCombatEntity && !(hitinfo.Initiator is Barricade) && hp.info.defend)
                 {
-                    DoLog("Setting attacked to true");
+                    DoLog("Setting attacked to true.");
                     hp.movement.attacked = true;
                     hp.movement.attackEntity = hitinfo.Initiator as BaseCombatEntity;
                 }
@@ -402,8 +424,13 @@ namespace Oxide.Plugins
                 {
                     hp.movement.Stand();
                 }
+                if (hp.info.invulnerable)
+                {
+                    return true;
+                }
                 //hp.movement.Evade();
             }
+            return null;
         }
 
         private object CanLootPlayer(BasePlayer target, BasePlayer player)
@@ -831,9 +858,6 @@ namespace Oxide.Plugins
                 case "kit":
                     hp.info.kit = data;
                     break;
-                case "band":
-                    hp.info.band = Convert.ToInt32(data);
-                    break;
                 case "entrypausetime":
                     hp.info.entrypausetime = Convert.ToInt32(data);
                     break;
@@ -850,6 +874,9 @@ namespace Oxide.Plugins
                     break;
                 case "entrypause":
                     hp.info.entrypause = !GetBoolValue(data);
+                    break;
+                case "ahostile":
+                    hp.info.ahostile = !GetBoolValue(data);
                     break;
                 case "hostile":
                     hp.info.hostile = !GetBoolValue(data);
@@ -944,10 +971,13 @@ namespace Oxide.Plugins
             {
                 switch (loc)
                 {
+                    case "kit":
+                        npc.info.kit = itemname;
+        ;                UpdateInventory(npc);
+                        break;
                     case "belt":
                         item.MoveToContainer(npc.player.inventory.containerBelt, -1, true);
                         if (item.info.category == ItemCategory.Weapon) npc.EquipFirstWeapon();
-                        if (item.info.category == ItemCategory.Fun) npc.EquipFirstInstrument();
                         break;
                     case "wear":
                     default:
@@ -956,17 +986,6 @@ namespace Oxide.Plugins
                 }
                 npc.player.inventory.ServerUpdate(0f);
             }
-        }
-        private object npcPlayNote(ulong npcid, int band, int note, int sharp, int octave, float noteval, float duration = 0.2f)
-        {
-            //Puts($"npcPlayNote called for {npcid.ToString()}");
-            if (npcs.ContainsKey(npcid))
-            {
-                HumanoidPlayer hp = FindHumanoidByID(npcid);
-                if (hp.info.band != band) return false;
-                hp.PlayNote(note, sharp, octave, noteval, duration);
-            }
-            return null;
         }
         #endregion
 
@@ -993,7 +1012,6 @@ namespace Oxide.Plugins
             string description = Lang("npcguisel");
             CuiElementContainer container = UI.Container(NPCGUS, UI.Color("242424", 1f), "0.1 0.1", "0.9 0.9", true, "Overlay");
             UI.Label(ref container, NPCGUS, UI.Color("#ffffff", 1f), description, 18, "0.23 0.92", "0.7 1");
-            UI.Label(ref container, NPCGUS, UI.Color("#22cc44", 1f), Lang("musician"), 12, "0.72 0.92", "0.77 1");
             UI.Label(ref container, NPCGUS, UI.Color("#2244cc", 1f), Lang("standard"), 12, "0.79 0.92", "0.86 1");
             UI.Button(ref container, NPCGUS, UI.Color("#d85540", 1f), Lang("close"), 12, "0.92 0.93", "0.985 0.98", $"noid selclose");
             int col = 0;
@@ -1006,10 +1024,7 @@ namespace Oxide.Plugins
                     row = 0;
                     col++;
                 }
-                string hBand = npc.Value.band.ToString();
-                if (hBand == "99") continue;
                 string color = "#2244cc";
-                if (hBand != "0") color = "#22cc44";
 
                 string hName = npc.Value.displayName;
                 float[] posb = GetButtonPositionP(row, col);
@@ -1063,6 +1078,7 @@ namespace Oxide.Plugins
                     { "loc", npcs[npc].loc.ToString() },
                     { "invulnerable", npcs[npc].invulnerable.ToString() },
                     { "lootable", npcs[npc].lootable.ToString() },
+                    { "ahostile", npcs[npc].ahostile.ToString() },
                     { "hostile", npcs[npc].hostile.ToString() },
                     { "defend", npcs[npc].defend.ToString() },
                     { "evade", npcs[npc].evade.ToString() },
@@ -1081,14 +1097,14 @@ namespace Oxide.Plugins
                     { "roadname",  npcs[npc].roadname },
                     { "monstart",  npcs[npc].monstart },
                     { "monend",  npcs[npc].monend },
-                    { "speed",  npcs[npc].speed.ToString() },
-                    { "band",  npcs[npc].band.ToString() }
+                    { "speed",  npcs[npc].speed.ToString() }
                 };
                 Dictionary<string, bool> isBool = new Dictionary<string, bool>
                 {
                     { "enable", true },
                     { "invulnerable", true },
                     { "lootable", true },
+                    { "ahostile", true },
                     { "hostile", true },
                     { "defend", true },
                     { "evade", true },
@@ -1504,12 +1520,9 @@ namespace Oxide.Plugins
                 DoLog($"  Trying to give kit '{hp.info.kit}' to {hp.player.userID}");
                 Kits?.Call("GiveKit", hp.player, hp.info.kit);
 
-                if (hp.EquipFirstInstrument() == null)
+                if (hp.EquipFirstWeapon() == null)
                 {
-                    if (hp.EquipFirstWeapon() == null)
-                    {
-                        hp.EquipFirstTool();
-                    }
+                    hp.EquipFirstTool();
                 }
             }
             hp.player.SV_ClothingChanged();
@@ -1556,8 +1569,8 @@ namespace Oxide.Plugins
             public bool canfly = false;
 
             public bool ephemeral = false;
-            public bool hostile = false;
             public bool ahostile = false;
+            public bool hostile = false;
             public bool defend = false;
             public bool evade = false;
             public bool follow = false;
@@ -1586,15 +1599,13 @@ namespace Oxide.Plugins
             public string waypoint;
             public bool holdingWeapon;
 
-            public int band = 0;
-
             public HumanoidInfo(ulong uid, Vector3 position, Quaternion rotation)
             {
                 displayName = "Noid";
                 invulnerable = true;
                 //health = 50;
-                hostile = false;
                 ahostile = false;
+                hostile = false;
                 needsammo = true;
                 //dropWeapon = true;
                 //respawn = true;
@@ -1646,6 +1657,7 @@ namespace Oxide.Plugins
 
             // Real-time status
             public bool attacked = false;
+            public bool defending = false;
             public bool moving = false;
             public bool sitting = false;
             public bool riding = false;
@@ -1685,6 +1697,8 @@ namespace Oxide.Plugins
                 StartPos = npc.info.loc;
                 npc.player.transform.rotation = npc.info.rot;
                 npc.player.modelState.onground = true;
+
+                InvokeRepeating("DoAttack", 0f, 0.5f);
             }
 
             public void FixedUpdate()
@@ -1784,7 +1798,9 @@ namespace Oxide.Plugins
 
             private void DoAttack()
             {
-                Instance.Puts("DoAttack() called, which does nothing ;)");
+                if (!defending) return;
+                npc.LookTowards(attackEntity.transform.position);
+                FiringEffect(attackEntity, firstWeapon as BaseProjectile, npc.info.damageAmount, false); // miss is based on a hitchance calc. false for now
             }
 
             private void Defend()
@@ -1792,6 +1808,7 @@ namespace Oxide.Plugins
                 if (attackEntity.IsDead() || attackEntity.IsDestroyed)
                 {
                     attacked = false;
+                    defending = false;
                     npc.info.locomode = npc.info.defaultLoco;
                     return;
                 }
@@ -1810,12 +1827,11 @@ namespace Oxide.Plugins
                     return; // If only you could smack a player with a fish...
                 }
 
-                npc.LookTowards(attackEntity.transform.position);
-                FiringEffect(attackEntity, firstWeapon as BaseProjectile, npc.info.damageAmount, false); // miss is based on a hitchance calc. false for now
-                DoAttack();
+                defending = true;
+                //DoAttack();
             }
 
-            private void FiringEffect(BaseCombatEntity target, BaseProjectile weapon, float da, bool miss)
+            private void FiringEffect(BaseCombatEntity target, BaseProjectile weapon, float da, bool miss = false)
             {
                 ItemModProjectile component = weapon.primaryMagazine.ammoType.GetComponent<ItemModProjectile>();
                 Vector3 source = npc.player.transform.position + npc.player.GetOffset();
@@ -1826,6 +1842,25 @@ namespace Oxide.Plugins
                 Vector3 direction = (target.transform.position + npc.player.GetOffset() - source).normalized;
                 Vector3 vector32 = direction * (component.projectileVelocity * weapon.projectileVelocityScale);
 
+                Vector3 hit;
+                RaycastHit raycastHit;
+                if (Vector3.Distance(npc.player.transform.position, target.transform.position) < 0.5)
+                {
+                    hit = target.transform.position + npc.player.GetOffset(true);
+                }
+                else if (!Physics.SphereCast(source, .01f, vector32, out raycastHit, float.MaxValue, targetLayer))
+                {
+                    Instance.DoLog($"Attack failed: {npc.player.displayName} - {attackEntity.name}");
+                    return;
+                }
+                else
+                {
+                    hit = raycastHit.point;
+                    target = raycastHit.GetCollider().GetComponent<BaseCombatEntity>();
+                    Instance.DoLog($"Attack failed: {raycastHit.GetCollider().name} - {(Layer)raycastHit.GetCollider().gameObject.layer}");
+                    miss = miss || target == null;
+                }
+                weapon.primaryMagazine.contents--;
                 if (miss)
                 {
                     float aimCone = weapon.GetAimCone();
@@ -1840,30 +1875,30 @@ namespace Oxide.Plugins
                 effect.number = UnityEngine.Random.Range(0, 2147483647);
                 EffectNetwork.Send(effect);
 
-//                Vector3 dest;
-//                if (miss)
-//                {
-//                    da = 0;
-//                    dest = hit;
-//                }
-//                else
-//                {
-//                    dest = target.transform.position;
-//                }
-//                var hitInfo = new HitInfo(npc.player, target, DamageType.Bullet, dmg, dest)
-//                {
-//                    DidHit = !miss,
-//                    HitEntity = target,
-//                    PointStart = source,
-//                    PointEnd = hit,
-//                    HitPositionWorld = dest,
-//                    HitNormalWorld = -dir,
-//                    WeaponPrefab = GameManager.server.FindPrefab(StringPool.Get(baseProjectile.prefabID)).GetComponent<AttackEntity>(),
-//                    Weapon = (AttackEntity)firstWeapon,
-//                    HitMaterial = StringPool.Get("Flesh")
-//                };
-//                target?.OnAttacked(hitInfo);
-//                Effect.server.ImpactEffect(hitInfo);
+                Vector3 dest;
+                if (miss)
+                {
+                    da = 0;
+                    dest = hit;
+                }
+                else
+                {
+                    dest = target.transform.position;
+                }
+                var hitInfo = new HitInfo(npc.player, target, DamageType.Bullet, da, dest)
+                {
+                    DidHit = !miss,
+                    HitEntity = target,
+                    PointStart = source,
+                    PointEnd = hit,
+                    HitPositionWorld = dest,
+                    HitNormalWorld = -direction,
+                    WeaponPrefab = GameManager.server.FindPrefab(StringPool.Get(weapon.prefabID)).GetComponent<AttackEntity>(),
+                    Weapon = (AttackEntity)firstWeapon,
+                    HitMaterial = StringPool.Get("Flesh")
+                };
+                target?.OnAttacked(hitInfo);
+                Effect.server.ImpactEffect(hitInfo);
             }
 
             private void Execute_Move()
@@ -1871,12 +1906,16 @@ namespace Oxide.Plugins
                 if (!npc.info.canmove) return;
                 if (!npc.info.enable) return;
 
+                if (npc.player.IsWounded()) return;
+
                 currPos = Vector3.Lerp(StartPos, EndPos, waypointDone);
                 //currPos.y = GetMoveY(currPos); // Adjust for terrain height
 
                 if ((npc.info.hostile || npc.info.ahostile) && npc.target != null)
                 {
-                    DoAttack();
+                    //defending = true;
+                    Defend();
+                    //DoAttack();
                 }
                 else if (attacked && npc.info.locomode == LocoMode.Defend)
                 {
@@ -1967,49 +2006,25 @@ namespace Oxide.Plugins
                 if (!npc.info.cansit) return;
                 //Instance.DoLog($"[HumanoidMovement] {npc.player.displayName} wants to sit...");
                 // Find a place to sit
-                if (npc.info.band == 0)
-                {
-                    List<BaseChair> chairs = new List<BaseChair>();
-                    Vis.Entities(npc.info.loc, 5f, chairs);
 
-                    foreach (BaseChair mountable in chairs.Distinct().ToList())
-                    {
-                        Instance.DoLog($"[HumanoidMovement] {npc.player.displayName} trying to sit in chair...");
-                        if (mountable.IsMounted())
-                        {
-                            Instance.DoLog($"[HumanoidMovement] Someone is sitting here.");
-                            continue;
-                        }
-                        Instance.DoLog($"[HumanoidMovement] Found an empty chair.");
-                        mountable.MountPlayer(npc.player);
-                        npc.player.OverrideViewAngles(mountable.mountAnchor.transform.rotation.eulerAngles);
-                        npc.player.eyes.NetworkUpdate(mountable.mountAnchor.transform.rotation);
-                        npc.player.ClientRPCPlayer<Vector3>(null, npc.player, "ForcePositionTo", npc.player.transform.position);
-                        //mountable.SetFlag(BaseEntity.Flags.Busy, true, false);
-                        sitting = true;
-                        break;
-                    }
-                }
+                List<BaseChair> chairs = new List<BaseChair>();
+                Vis.Entities(npc.info.loc, 5f, chairs);
 
-                List<StaticInstrument> pidrxy = new List<StaticInstrument>();
-                Vis.Entities(npc.info.loc, 2f, pidrxy);
-                foreach (StaticInstrument mountable in pidrxy.Distinct().ToList())
+                foreach (BaseChair mountable in chairs.Distinct().ToList())
                 {
-                    Instance.DoLog($"[HumanoidMovement] {npc.player.displayName} trying to sit at instrument...");
+                    Instance.DoLog($"[HumanoidMovement] {npc.player.displayName} trying to sit in chair...");
                     if (mountable.IsMounted())
                     {
                         Instance.DoLog($"[HumanoidMovement] Someone is sitting here.");
                         continue;
                     }
+                    Instance.DoLog($"[HumanoidMovement] Found an empty chair.");
                     mountable.MountPlayer(npc.player);
                     npc.player.OverrideViewAngles(mountable.mountAnchor.transform.rotation.eulerAngles);
                     npc.player.eyes.NetworkUpdate(mountable.mountAnchor.transform.rotation);
-                    npc.player.ClientRPCPlayer(null, npc.player, "ForcePositionTo", npc.player.transform.position);
+                    npc.player.ClientRPCPlayer<Vector3>(null, npc.player, "ForcePositionTo", npc.player.transform.position);
                     //mountable.SetFlag(BaseEntity.Flags.Busy, true, false);
                     sitting = true;
-                    Instance.DoLog($"[HumanoidMovement] Setting instrument for {npc.player.displayName} to {mountable.ShortPrefabName}");
-                    npc.instrument = mountable.ShortPrefabName;
-                    npc.ktool = mountable;//.GetParentEntity() as StaticInstrument;
                     break;
                 }
             }
@@ -2428,10 +2443,6 @@ namespace Oxide.Plugins
                 if (npc.player == null) return;
                 //Instance.DoLog($"Determining move based on locomode of {npc.info.locomode.ToString()}");
 
-                //                if (npc.info.band > 0)
-                //                {
-                //                    npc.EquipFirstInstrument();
-                //                }
                 //if (npc.info.hostile || npc.info.ahostile || attacked)
                 //{
                 //    npc.EquipFirstWeapon();
@@ -2567,11 +2578,6 @@ namespace Oxide.Plugins
 
             public BaseCombatEntity target;
 
-            // Music
-            public InstrumentTool itool;
-            public StaticInstrument ktool;
-            public string instrument;
-
             public void Awake()
             {
                 Instance.DoLog("[HumanoidPlayer] Getting player object...");
@@ -2586,8 +2592,6 @@ namespace Oxide.Plugins
             {
                 //StopAllCoroutines();
                 player = null;
-                itool = null;
-                ktool = null;
             }
 
             public void SetInfo(HumanoidInfo info, bool update = false)
@@ -2739,67 +2743,6 @@ namespace Oxide.Plugins
                     tool.SetHeld(true);
                 }
                 return tool;
-            }
-
-            public HeldEntity EquipFirstInstrument()
-            {
-                HeldEntity instr = GetFirstInstrument();
-                if (instr != null)
-                {
-                    UnequipAll();
-                    instr.SetOwnerPlayer(player);
-                    instr.SetVisibleWhileHolstered(true);
-                    instr.SetHeld(true);
-                    instr.UpdateHeldItemVisibility();
-                    Item item = instr.GetItem();
-                    SetActive(item.uid);
-                    itool = instr as InstrumentTool; // THIS ONE!
-                    instrument = instr.ShortPrefabName;
-                }
-                return instr;
-            }
-
-            public void PlayNote(int note, int sharp, int octave, float noteval, float duration = 0.2f)
-            {
-                if (duration == 0) duration = 0.2f;
-                switch (instrument)
-                {
-                    case "drumkit.deployed.static":
-                    case "drumkit.deployed":
-                    case "xylophone.deployed":
-                        if (ktool != null)
-                        {
-                            ktool.ClientRPC<int, int, int, float>(null, "Client_PlayNote", note, sharp, octave, noteval);
-                        }
-                        break;
-                    case "cowbell.deployed":
-                        if (ktool != null)
-                        {
-                            ktool.ClientRPC<int, int, int, float>(null, "Client_PlayNote", 2, 0, 0, 1);
-                        }
-                        break;
-                    case "piano.deployed.static":
-                    case "piano.deployed":
-                        if (ktool != null)
-                        {
-                            ktool.ClientRPC<int, int, int, float>(null, "Client_PlayNote", note, sharp, octave, noteval);
-                            Instance.timer.Once(duration, () =>
-                            {
-                                ktool.ClientRPC<int, int, int, float>(null, "Client_StopNote", note, sharp, octave, noteval);
-                            });
-                        }
-                        break;
-                    default:
-                        if (itool != null)
-                        {
-                            itool.ClientRPC<int, int, int, float>(null, "Client_PlayNote", note, sharp, octave, noteval);
-                            Instance.timer.Once(duration, () =>
-                            {
-                                itool.ClientRPC<int, int, int, float>(null, "Client_StopNote", note, sharp, octave, noteval);
-                            });
-                        }
-                        break;
-                }
             }
         }
 
