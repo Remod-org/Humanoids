@@ -35,12 +35,11 @@ using System.Globalization;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text.RegularExpressions;
-using System.Timers;
 using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("Humanoids", "RFC1920", "1.1.2")]
+    [Info("Humanoids", "RFC1920", "1.1.3")]
     [Description("Adds interactive NPCs which can be modded by other plugins")]
     class Humanoids : RustPlugin
     {
@@ -211,7 +210,7 @@ namespace Oxide.Plugins
         private void SaveData()
         {
             Dictionary<ulong, HumanoidInfo> tmpnpcs = new Dictionary<ulong, HumanoidInfo>();
-            foreach(var x in npcs)
+            foreach(KeyValuePair<ulong, HumanoidInfo> x in npcs)
             {
                 if (!x.Value.ephemeral)
                 {
@@ -259,73 +258,10 @@ namespace Oxide.Plugins
         }
         #endregion
 
-//        object RaycastAll<T> (Ray ray) where T : BaseEntity
-//        {
-//            var hits = Physics.RaycastAll (ray);
-//            GamePhysics.Sort (hits);
-//            var distance = 100f;
-//            object target = false;
-//            foreach (var hit in hits) {
-//                var ent = hit.GetEntity ();
-//                if (ent is T && hit.distance < distance) {
-//                    target = ent;
-//                    break;
-//                }
-//            }
-//
-//            return target;
-//        }
-
-//        private List<BasePlayer> FindLocalHumanoids(Vector3 position, float range)
-//        {
-//            List<BasePlayer> pls = new List<BasePlayer>();
-//            Vis.Entities(position, range, pls);
-//            pls = pls.ToArray().OrderBy((d) => (d.transform.position - position).sqrMagnitude).ToList();
-//
-//            return pls;
-//        }
-
         #region Oxide Hooks
-        private void OldOnPlayerInput(BasePlayer player, InputState input)
-        {
-            if (player == null || input == null) return;
-            //            if (input.current.buttons > 0)
-            //                DoLog($"OnPlayerInput: {input.current.buttons}");
-            if (!input.WasJustPressed(BUTTON.USE)) return;
-
-            List<BasePlayer> pls = new List<BasePlayer>();
-            Vis.Entities(player.transform.position, 3f, pls);
-            pls = pls.ToArray().OrderBy((d) => (d.transform.position - player.transform.position).sqrMagnitude).ToList();
-
-            for (int i = 0; i < pls.Count; i++)
-            {
-                if (pls[i] == player) continue;
-                HumanoidPlayer hp = pls[i].GetComponent<HumanoidPlayer>();
-                if (hp == null) continue;
-
-                if (hp.movement.sitting)
-                {
-                    DoLog($"Trying to stand {hp.info.displayName}");
-                    hp.movement.Stand();
-                }
-                if (hp.info.entrypause)
-                {
-                    DoLog($"Trying to pause {hp.info.displayName}");
-                    hp.movement.Stop(true);
-                }
-                hp.LookTowards(player.transform.position, true);
-                //Message(player.IPlayer, hp.info.displayName);
-                Interface.Oxide.CallHook("OnUseNPC", hp.player, player);
-                SaveData();
-                break;
-            }
-        }
-
         private void OnPlayerInput(BasePlayer player, InputState input)
         {
             if (player == null || input == null) return;
-            //            if (input.current.buttons > 0)
-            //                DoLog($"OnPlayerInput: {input.current.buttons}");
             if (!input.WasJustPressed(BUTTON.USE)) return;
 
             RaycastHit hit;
@@ -340,13 +276,12 @@ namespace Oxide.Plugins
                     DoLog($"Trying to stand {hp.info.displayName}");
                     hp.movement.Stand();
                 }
+                hp.LookToward(player.transform.position, true);
                 if (hp.info.entrypause)
                 {
                     DoLog($"Trying to pause {hp.info.displayName}");
                     hp.movement.Stop(true);
                 }
-                hp.LookTowards(player.transform.position, true);
-                //Message(player.IPlayer, hp.info.displayName);
                 Interface.Oxide.CallHook("OnUseNPC", hp.player, player);
                 SaveData();
             }
@@ -804,7 +739,6 @@ namespace Oxide.Plugins
                     return pair.Key;
                 }
             }
-            Puts("GOT HERE");
 
             ulong npcid = 0;
             HumanoidInfo hi = new HumanoidInfo(npcid, position, currentRot)
@@ -880,6 +814,10 @@ namespace Oxide.Plugins
                     break;
                 case "hostile":
                     hp.info.hostile = !GetBoolValue(data);
+                    break;
+                case "gather":
+                    hp.info.gather = !GetBoolValue(data);
+                    hp.info.canmove = hp.info.defend;
                     break;
                 case "defend":
                     hp.info.defend = !GetBoolValue(data);
@@ -1572,6 +1510,7 @@ namespace Oxide.Plugins
             public bool ahostile = false;
             public bool hostile = false;
             public bool defend = false;
+            public bool gather = false;
             public bool evade = false;
             public bool follow = false;
             public bool needsammo = false;
@@ -1627,6 +1566,7 @@ namespace Oxide.Plugins
                 entrypause = true;
                 entrypausetime = 5f;
                 defend = false;
+                gather = false;
                 evade = false;
                 //evdist = 0f;
                 follow = false;
@@ -1799,7 +1739,7 @@ namespace Oxide.Plugins
             private void DoAttack()
             {
                 if (!defending) return;
-                npc.LookTowards(attackEntity.transform.position);
+                npc.LookToward(attackEntity.transform.position);
                 FiringEffect(attackEntity, firstWeapon as BaseProjectile, npc.info.damageAmount, false); // miss is based on a hitchance calc. false for now
             }
 
@@ -1885,7 +1825,7 @@ namespace Oxide.Plugins
                 {
                     dest = target.transform.position;
                 }
-                var hitInfo = new HitInfo(npc.player, target, DamageType.Bullet, da, dest)
+                HitInfo hitInfo = new HitInfo(npc.player, target, DamageType.Bullet, da, dest)
                 {
                     DidHit = !miss,
                     HitEntity = target,
@@ -1937,7 +1877,7 @@ namespace Oxide.Plugins
                 //Instance.DoLog($"Current location: {npc.info.loc}");
                 //Instance.DoLog($"Execute_Move from {StartPos.ToString()} to {EndPos.ToString()} within {tripTime.ToString()}s\n\tcurrent: {npc.player.transform.position.ToString()}, next: {currPos.ToString()}, elapsed: {elapsedTime.ToString()} ");
 
-                npc.LookTowards(EndPos);
+                npc.LookToward(EndPos);
                 npc.player.MovePosition(currPos);
                 //npc.player.SendNetworkUpdate();
                 Vector3 newEyesPos = currPos + new Vector3(0, 1.6f, 0);
@@ -2022,11 +1962,81 @@ namespace Oxide.Plugins
                     mountable.MountPlayer(npc.player);
                     npc.player.OverrideViewAngles(mountable.mountAnchor.transform.rotation.eulerAngles);
                     npc.player.eyes.NetworkUpdate(mountable.mountAnchor.transform.rotation);
-                    npc.player.ClientRPCPlayer<Vector3>(null, npc.player, "ForcePositionTo", npc.player.transform.position);
+                    npc.player.ClientRPCPlayer(null, npc.player, "ForcePositionTo", npc.player.transform.position);
                     //mountable.SetFlag(BaseEntity.Flags.Busy, true, false);
                     sitting = true;
                     break;
                 }
+            }
+
+            public void LootBox(LootContainer box)
+            {
+                Instance.DoLog($"{npc.info.displayName} looting {box.ShortPrefabName}");
+
+                List<Item> bitems = new List<Item>(box.inventory.itemList);
+                int i = 0;
+                foreach (Item item in bitems)
+                {
+                    Instance.DoLog($"Moving {item.info.name} to npc inventory");
+                    //item.MoveToContainer(npc.player.inventory.containerMain, -1);
+                    item.MoveToContainer(npc.player.inventory.containerMain, -1);
+                    //box.inventory.itemList[i].MoveToContainer(npc.player.inventory.containerMain, -1);
+                    box.inventory.MarkDirty();
+                    npc.player.inventory.containerMain.MarkDirty();
+                    i++;
+                }
+                box.inventory.Kill();
+                box.Kill(BaseNetworkable.DestroyMode.Gib);
+            }
+
+            public void DoGather(LootContainer re)
+            {
+                // gather
+                npc.info.canmove = false;
+                moving = false;
+                Instance.DoLog($"Gathering {re.ShortPrefabName} ({re.net.ID.ToString()})");
+                npc.player.serverInput.current = new InputMessage() { buttons = 256 };
+                LootBox(re);
+                npc.info.canmove = true;
+                moving = true;
+                EndPos = npc.transform.position;
+                currentWaypoint = 0;
+                return;
+            }
+            public void Gather()
+            {
+                Instance.Puts($"Gather() called for {npc.info.displayName}");
+                List<LootContainer> res = new List<LootContainer>();
+                Vis.Entities(npc.info.loc, 100f, res);
+                res = res.OrderBy(x => Vector3.Distance(npc.info.loc, x.transform.position)).ToList();
+
+                foreach (LootContainer re in res.Distinct().ToList())
+                {
+                    Instance.DoLog($"Checking resource {re.ShortPrefabName}");
+                    if (Vector3.Distance(npc.info.loc, re.transform.position) < 1f)
+                    {
+                        DoGather(re);
+                        return;
+                    }
+                    if (!IsLayerBlocked(npc.info.loc, 2f, obstructionMask))
+                    {
+                        Instance.DoLog($"Found resource {re.ShortPrefabName} to gather");
+                        npc.EquipFirstTool();
+                        npc.LookToward(re.transform.position);
+                        npc.info.targetloc = re.transform.position;
+                        moving = true;
+                        npc.info.canmove = true;
+                        StartPos = npc.transform.position;
+                        EndPos = re.transform.position;
+                        tripTime = Vector3.Distance(StartPos, EndPos) * 2 / GetSpeed(npc.info.speed);
+                        npc.info.enable = true;
+                    }
+                    break;
+                }
+
+                //List<ResourceEntity> res = new List<ResourceEntity>();
+                //Vis.Entities(npc.info.loc, 20f, res);
+                //foreach (ResourceEntity re in res.Distinct().ToList())
             }
 
             public void HandlePause(bool kill = false)
@@ -2406,7 +2416,7 @@ namespace Oxide.Plugins
                     //    //npc.Evade();
                     //}
 
-                    npc.LookTowards(npc.info.targetloc);
+                    npc.LookToward(npc.info.targetloc);
                     return true;
                 }
                 List<BasePlayer> nearPlayers = new List<BasePlayer>();
@@ -2418,7 +2428,7 @@ namespace Oxide.Plugins
                     //    //npc.Evade();
                     //}
 
-                    npc.LookTowards(npc.info.targetloc);
+                    npc.LookToward(npc.info.targetloc);
                     return true;
                 }
                 List<BaseAnimalNPC> nearAnimals = new List<BaseAnimalNPC>();
@@ -2430,7 +2440,7 @@ namespace Oxide.Plugins
                     //    //npc.Evade();
                     //}
 
-                    npc.LookTowards(npc.info.targetloc);
+                    npc.LookToward(npc.info.targetloc);
                     return true;
                 }
                 return false;
@@ -2443,79 +2453,14 @@ namespace Oxide.Plugins
                 if (npc.player == null) return;
                 //Instance.DoLog($"Determining move based on locomode of {npc.info.locomode.ToString()}");
 
-                //if (npc.info.hostile || npc.info.ahostile || attacked)
-                //{
-                //    npc.EquipFirstWeapon();
-                //}
-                //else
-                //{
-                //    npc.EquipFirstTool();
-                //}
-
-                //if (npc.info.locomode.HasFlag(LocoMode.Sit))
-                //{
-                //    npc.info.cansit = true;
-                //    npc.info.canride = false;
-                //    npc.info.canmove = true;
-                //    Sit();
-                //}
-                //if (npc.info.locomode.HasFlag(LocoMode.Ride))
-                //{
-                //    npc.info.cansit = false;
-                //    npc.info.canride = true;
-                //    npc.info.canmove = true;
-                //    Ride();
-                //}
-                //if (npc.info.locomode.HasFlag(LocoMode.Follow))
-                //{
-                //    npc.info.cansit = false;
-                //    npc.info.canride = false;
-                //    npc.info.canmove = true;
-                //    //Follow();
-                //}
-                //if (npc.info.locomode.HasFlag(LocoMode.Stand))
-                //{
-                //    npc.info.cansit = false;
-                //    npc.info.canride = false;
-                //    npc.info.canmove = false;
-                //    Stand();
-                //}
-                //if (npc.info.locomode.HasFlag(LocoMode.Road))
-                //{
-                //    npc.info.cansit = false;
-                //    npc.info.canride = true;
-                //    npc.info.canmove = true;
-                //    if (!moving)
-                //    {
-                //        moving = true;
-                //        FindRoad();
-                //    }
-                //}
-                //if (npc.info.locomode.HasFlag(LocoMode.Monument))
-                //{
-                //    npc.info.cansit = false;
-                //    npc.info.canride = false;
-                //    npc.info.canmove = true;
-                //}
-                //if (npc.info.locomode.HasFlag(LocoMode.Gather))
-                //{
-                //    npc.info.canmove = true;
-                //    npc.info.cansit = false;
-                //}
-                //if (npc.info.locomode.HasFlag(LocoMode.Defend))
-                //{
-                //    npc.info.canmove = true;
-                //    npc.info.cansit = false;
-                //}
-                //if (npc.info.locomode.HasFlag(LocoMode.Default))
-                //{
-                //    npc.info.cansit = false;
-                //    npc.info.canride = false;
-                //    npc.info.canmove = false;
-                //}
-
                 switch (npc.info.locomode)
                 {
+                    case LocoMode.Gather:
+                        npc.info.cansit = false;
+                        npc.info.canride = false;
+                        npc.info.canmove = true;
+                        Gather();
+                        break;
                     case LocoMode.Sit:
                         npc.info.cansit = true;
                         npc.info.canride = false;
@@ -2634,7 +2579,7 @@ namespace Oxide.Plugins
                 //pathfollower = player.gameObject.AddComponent<PathFollower>();
             }
 
-            public void LookTowards(Vector3 pos, bool wave = false)
+            public void LookToward(Vector3 pos, bool wave = false)
             {
                 if (pos != info.loc)
                 {
