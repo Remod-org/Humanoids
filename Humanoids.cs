@@ -63,6 +63,8 @@ namespace Oxide.Plugins
         private const string NPCGUV = "npc.setval";
         private readonly List<string> guis = new List<string>() { NPCGUI, NPCGUK, NPCGUL, NPCGUM, NPCGUN, NPCGUR, NPCGUS, NPCGUV };
 
+        private bool newsave = false;
+
         public static Humanoids Instance = null;
         private static Dictionary<ulong, HumanoidInfo> npcs = new Dictionary<ulong, HumanoidInfo>();
 
@@ -94,6 +96,42 @@ namespace Oxide.Plugins
         #endregion
 
         #region global
+        protected override void LoadDefaultMessages()
+        {
+            lang.RegisterMessages(new Dictionary<string, string>
+            {
+                ["npcgui"] = "Humanoid GUI",
+                ["npcguisel"] = "HumanoidGUI NPC Select ",
+                ["npcguikit"] = "HumanoidGUI Kit Select",
+                ["npcguimon"] = "HumanoidGUI Monument Select",
+                ["npcguiroad"] = "HumanoidGUI Road Select",
+                ["npcguiloco"] = "HumanoidGUI LocoMode Select",
+                ["close"] = "Close",
+                ["none"] = "None",
+                ["noid"] = "noid",
+                ["start"] = "Start",
+                ["end"] = "End",
+                ["humanoids"] = "Humanoids",
+                ["needselect"] = "Select NPC",
+                ["select"] = "Select",
+                ["editing"] = "Editing",
+                ["mustselect"] = "Please press 'Select' to choose an NPC.",
+                ["guihelp1"] = "For blue buttons, click to toggle true/false.",
+                ["guihelp2"] = "For all values above in gray, you may type a new value and press enter.",
+                ["guihelp3"] = "For kit, press the button to select a kit.",
+                ["add"] = "Add",
+                ["new"] = "Create New",
+                ["remove"] = "Remove",
+                ["spawnhere"] = "Spawn Here",
+                ["tpto"] = "Teleport to NPC",
+                ["name"] = "Name",
+                ["online"] = "Online",
+                ["offline"] = "Offline",
+                ["deauthall"] = "DeAuthAll",
+                ["remove"] = "Remove"
+            }, this);
+        }
+
         private void OnServerInitialized()
         {
             LoadConfigVariables();
@@ -107,8 +145,14 @@ namespace Oxide.Plugins
             HumanoidPlayer[] allHumanoids = Resources.FindObjectsOfTypeAll<HumanoidPlayer>();
             foreach (HumanoidPlayer obj in allHumanoids)
             {
+                if (configData.Options.zeroOnWipe && newsave)
+                {
+                    obj.info.loc = Vector3.zero;
+                }
                 UnityEngine.Object.Destroy(obj);
             }
+            newsave = false;
+
             HumanoidMovement[] allMove = Resources.FindObjectsOfTypeAll<HumanoidMovement>();
             foreach (HumanoidMovement obj in allMove)
             {
@@ -146,15 +190,9 @@ namespace Oxide.Plugins
             }
         }
 
-        void OnNewSave()
+        private void OnNewSave()
         {
-            if (!configData.Options.zeroOnWipe) return;
-            HumanoidPlayer[] allHumanoids = Resources.FindObjectsOfTypeAll<HumanoidPlayer>();
-            foreach (HumanoidPlayer obj in allHumanoids)
-            {
-                if (obj == null) continue;
-                obj.info.loc = Vector3.zero;
-            }
+            newsave = true;
         }
 
         //private void OnServerShutdown()
@@ -220,48 +258,14 @@ namespace Oxide.Plugins
             Interface.Oxide.DataFileSystem.WriteObject(Name + "/humanoids", tmpnpcs);
             tmpnpcs.Clear();
         }
-
-        protected override void LoadDefaultMessages()
-        {
-            lang.RegisterMessages(new Dictionary<string, string>
-            {
-                ["npcgui"] = "Humanoid GUI",
-                ["npcguisel"] = "HumanoidGUI NPC Select ",
-                ["npcguikit"] = "HumanoidGUI Kit Select",
-                ["npcguimon"] = "HumanoidGUI Monument Select",
-                ["npcguiroad"] = "HumanoidGUI Road Select",
-                ["npcguiloco"] = "HumanoidGUI LocoMode Select",
-                ["close"] = "Close",
-                ["none"] = "None",
-                ["noid"] = "noid",
-                ["start"] = "Start",
-                ["end"] = "End",
-                ["humanoids"] = "Humanoids",
-                ["needselect"] = "Select NPC",
-                ["select"] = "Select",
-                ["editing"] = "Editing",
-                ["mustselect"] = "Please press 'Select' to choose an NPC.",
-                ["guihelp1"] = "For blue buttons, click to toggle true/false.",
-                ["guihelp2"] = "For all values above in gray, you may type a new value and press enter.",
-                ["guihelp3"] = "For kit, press the button to select a kit.",
-                ["add"] = "Add",
-                ["new"] = "Create New",
-                ["remove"] = "Remove",
-                ["spawnhere"] = "Spawn Here",
-                ["tpto"] = "Teleport to NPC",
-                ["name"] = "Name",
-                ["online"] = "Online",
-                ["offline"] = "Offline",
-                ["deauthall"] = "DeAuthAll",
-                ["remove"] = "Remove"
-            }, this);
-        }
         #endregion
 
         #region Oxide Hooks
         private void OnPlayerInput(BasePlayer player, InputState input)
         {
             if (player == null || input == null) return;
+            //if (input.current.buttons > 0)
+            //    Puts($"OnPlayerInput: {input.current.buttons}");
             if (!input.WasJustPressed(BUTTON.USE)) return;
 
             RaycastHit hit;
@@ -307,6 +311,18 @@ namespace Oxide.Plugins
             if (player == null) return null;
             if (IsHumanoid(player)) return true;
             return null;
+        }
+
+        private void OnEntityDeath(BaseCombatEntity entity, HitInfo hitinfo)
+        {
+            var hp = entity.GetComponent<HumanoidPlayer>();
+            if (hp != null)
+            {
+                if (hp.info.respawn)
+                {
+                    timer.Once(hp.info.respawnTimer, () => RespawnNPC(hp.player));
+                }
+            }
         }
 
         private object OnEntityTakeDamage(BaseCombatEntity entity, HitInfo hitinfo)
@@ -1083,7 +1099,7 @@ namespace Oxide.Plugins
                     {
                         if (plugins.Exists("Kits"))
                         {
-                            string kitname = info.Value != null ? info.Value : Lang("none");
+                            string kitname = info.Value ?? Lang("none");
                             UI.Button(ref container, NPCGUI, UI.Color("#d85540", 1f), kitname, 12, $"{posb[0]} {posb[1]}", $"{posb[0] + ((posb[2] - posb[0]) / 2)} {posb[3]}", $"noid npcselkit {npc.ToString()} {kitname}");
                         }
                         else
@@ -1095,7 +1111,7 @@ namespace Oxide.Plugins
                     {
                         if (plugins.Exists("RoadFinder"))
                         {
-                            string roadname = info.Value != null ? info.Value : Lang("none");
+                            string roadname = info.Value ?? Lang("none");
                             UI.Button(ref container, NPCGUI, UI.Color("#d85540", 1f), roadname, 12, $"{posb[0]} {posb[1]}", $"{posb[0] + ((posb[2] - posb[0]) / 2)} {posb[3]}", $"noid npcselroad {npc.ToString()} {roadname}");
                         }
                         else
@@ -1105,17 +1121,17 @@ namespace Oxide.Plugins
                     }
                     else if (info.Key == "monstart" && npcs[npc].locomode == LocoMode.Monument)
                     {
-                        string monname = info.Value != null ? info.Value : Lang("none");
+                        string monname = info.Value ?? Lang("none");
                         UI.Button(ref container, NPCGUI, UI.Color("#d85540", 1f), monname, 12, $"{posb[0]} {posb[1]}", $"{posb[0] + ((posb[2] - posb[0]) / 2)} {posb[3]}", $"noid npcselmonstart {npc.ToString()} {monname}");
                     }
                     else if (info.Key == "monend" && npcs[npc].locomode == LocoMode.Monument)
                     {
-                        string monname = info.Value != null ? info.Value : Lang("none");
+                        string monname = info.Value ?? Lang("none");
                         UI.Button(ref container, NPCGUI, UI.Color("#d85540", 1f), monname, 12, $"{posb[0]} {posb[1]}", $"{posb[0] + ((posb[2] - posb[0]) / 2)} {posb[3]}", $"noid npcselmonend {npc.ToString()} {monname}");
                     }
                     else if (info.Key == "locomode")
                     {
-                        string locomode = info.Value != null ? info.Value : Lang("none");
+                        string locomode = info.Value ?? Lang("none");
                         UI.Button(ref container, NPCGUI, UI.Color("#d85540", 1f), locomode, 12, $"{posb[0]} {posb[1]}", $"{posb[0] + ((posb[2] - posb[0]) / 2)} {posb[3]}", $"noid npcselloco {npc.ToString()}");
                     }
                     else if (info.Key == "loc")
@@ -1144,7 +1160,7 @@ namespace Oxide.Plugins
                     }
                     else
                     {
-                        string oldval = info.Value != null ? info.Value : Lang("unset");
+                        string oldval = info.Value ?? Lang("unset");
                         UI.Label(ref container, NPCGUI, UI.Color("#535353", 1f), oldval, 12, $"{posb[0]} {posb[1]}", $"{posb[0] + ((posb[2] - posb[0]) / 2)} {posb[3]}");
                         UI.Input(ref container, NPCGUI, UI.Color("#ffffff", 1f), oldval, 12, $"{posb[0]} {posb[1]}", $"{posb[0] + ((posb[2] - posb[0]) / 2)} {posb[3]}", $"noid npcset {npc.ToString()} {info.Key} ");
                     }
@@ -1517,6 +1533,7 @@ namespace Oxide.Plugins
             public bool invulnerable = true;
             public bool lootable = false;
             public bool entrypause = true;
+            public bool respawn = true;
 
             // Location and movement
             public float speed;
@@ -1530,6 +1547,7 @@ namespace Oxide.Plugins
             public float damageAmount = 1f;
             public float followTime = 30f;
             public float entrypausetime = 5f;
+            public float respawnTimer = 30f;
             public string roadname;
             public string monstart;
             public string monend;
@@ -1547,7 +1565,7 @@ namespace Oxide.Plugins
                 hostile = false;
                 needsammo = true;
                 //dropWeapon = true;
-                //respawn = true;
+                respawn = true;
                 //respawnSeconds = 60;
                 loc = position;
                 rot = rotation;
@@ -1609,15 +1627,15 @@ namespace Oxide.Plugins
             private int currentWaypoint = -1;
 
             public float followDistance = 3.5f;
-            private float lastHit = 0f;
+            private readonly float lastHit = 0f;
 
             public int noPath = 0;
             public bool shouldMove = true;
 
-            private float startedReload = 0f;
-            private float startedFollow = 0f;
+            private readonly float startedReload = 0f;
+            private readonly float startedFollow = 0f;
 
-            private Collider collider;
+            private readonly Collider collider;
 
             public BaseCombatEntity attackEntity = null;
             public BaseEntity followEntity = null;
