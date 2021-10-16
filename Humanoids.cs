@@ -808,8 +808,11 @@ namespace Oxide.Plugins
                 case "kit":
                     hp.info.kit = data;
                     break;
+                case "entrypause":
+                    hp.info.entrypause = !GetBoolValue(data);
+                    break;
                 case "entrypausetime":
-                    hp.info.entrypausetime = Convert.ToInt32(data);
+                    hp.info.entrypausetime = Convert.ToSingle(data);
                     break;
                 case "name":
                 case "displayName":
@@ -821,9 +824,6 @@ namespace Oxide.Plugins
                     break;
                 case "lootable":
                     hp.info.lootable = !GetBoolValue(data);
-                    break;
-                case "entrypause":
-                    hp.info.entrypause = !GetBoolValue(data);
                     break;
                 case "ahostile":
                     hp.info.ahostile = !GetBoolValue(data);
@@ -864,6 +864,13 @@ namespace Oxide.Plugins
                 case "needsammo":
                 case "needsAmmo":
                     hp.info.needsammo = !GetBoolValue(data);
+                    break;
+                case "respawn":
+                    hp.info.respawn= !GetBoolValue(data);
+                    break;
+                case "respawnTimer":
+                case "respawntimer":
+                    hp.info.respawnTimer = Convert.ToSingle(data);
                     break;
                 case "attackdistance":
                     hp.info.attackDistance = Convert.ToSingle(data);
@@ -916,9 +923,8 @@ namespace Oxide.Plugins
             DoLog("Respawning");
             RespawnNPC(hp.player);
         }
-        private void GiveHumanoid(ulong npcid, string itemname, string loc = "wear")
+        private void GiveHumanoid(ulong npcid, string itemname, string loc = "wear", ulong skinid = 0, int count = 1)
         {
-            Item item = ItemManager.CreateByName(itemname, 1, 0);
             HumanoidPlayer npc = FindHumanoidByID(npcid);
             DoLog($"GiveHumanoid called: {npc.info.displayName}, {itemname}, {loc}");
             if (npc.player != null)
@@ -927,15 +933,29 @@ namespace Oxide.Plugins
                 {
                     case "kit":
                         npc.info.kit = itemname;
-        ;                UpdateInventory(npc);
+                        UpdateInventory(npc);
                         break;
                     case "belt":
-                        item.MoveToContainer(npc.player.inventory.containerBelt, -1, true);
-                        if (item.info.category == ItemCategory.Weapon) npc.EquipFirstWeapon();
+                        {
+                            Item item = ItemManager.CreateByName(itemname, 1, skinid);
+                            item.MoveToContainer(npc.player.inventory.containerBelt, -1, true);
+                            if (item.info.category == ItemCategory.Weapon) npc.EquipFirstWeapon();
+                        }
+                        break;
+                    case "main":
+                        {
+                            // e.g. for ammo
+                            Item item = ItemManager.CreateByName(itemname, count, skinid);
+                            item.MoveToContainer(npc.player.inventory.containerMain, -1, true);
+                            if (item.info.category == ItemCategory.Weapon) npc.EquipFirstWeapon();
+                        }
                         break;
                     case "wear":
                     default:
-                        item.MoveToContainer(npc.player.inventory.containerWear, -1, true);
+                        {
+                            Item item = ItemManager.CreateByName(itemname, 1, skinid);
+                            item.MoveToContainer(npc.player.inventory.containerWear, -1, true);
+                        }
                         break;
                 }
                 npc.player.inventory.ServerUpdate(0f);
@@ -1042,6 +1062,8 @@ namespace Oxide.Plugins
                     { "cansit",  npcs[npc].cansit.ToString() },
                     { "canride",  npcs[npc].canride.ToString() },
                     { "needsAmmo",  npcs[npc].needsammo.ToString() },
+                    { "respawn",  npcs[npc].respawn.ToString() },
+                    { "respawnTimer",  npcs[npc].respawnTimer.ToString() },
                     { "entrypause",  npcs[npc].entrypause.ToString() },
                     { "entrypausetime",  npcs[npc].entrypausetime.ToString() },
                     { "attackDistance",  npcs[npc].attackDistance.ToString() },
@@ -1067,9 +1089,9 @@ namespace Oxide.Plugins
                     { "cansit", true },
                     { "canride", true },
                     { "needsAmmo", true },
+                    { "respawn", true },
                     { "dropWeapon", true },
-                    { "entrypause", true },
-                    { "raiseAlarm", true }
+                    { "entrypause", true }
                 };
                 Dictionary<string, bool> isLarge = new Dictionary<string, bool>
                 {
@@ -1566,7 +1588,7 @@ namespace Oxide.Plugins
                 needsammo = true;
                 //dropWeapon = true;
                 respawn = true;
-                //respawnSeconds = 60;
+                respawnTimer = 30;
                 loc = position;
                 rot = rotation;
                 //collisionRadius = 10;
