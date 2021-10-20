@@ -1,4 +1,4 @@
-﻿#region License (GPL v3)
+#region License (GPL v3)
 /*
     Humanoids - NPC Players that can walk, fight, navigate, etc.
     Copyright (c) 2021 RFC1920 <desolationoutpostpve@gmail.com>
@@ -39,9 +39,9 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("Humanoids", "RFC1920", "1.1.3")]
+    [Info("Humanoids", "RFC1920", "1.2.0")]
     [Description("Adds interactive NPCs which can be modded by other plugins")]
-    class Humanoids : RustPlugin
+    internal class Humanoids : RustPlugin
     {
         #region vars
         [PluginReference]
@@ -245,6 +245,7 @@ namespace Oxide.Plugins
                DoLog($"{pls.Value.userid.ToString()}");
             }
         }
+
         private void SaveData()
         {
             Dictionary<ulong, HumanoidInfo> tmpnpcs = new Dictionary<ulong, HumanoidInfo>();
@@ -388,7 +389,7 @@ namespace Oxide.Plugins
         {
             if (player == null || target == null) return null;
             HumanoidPlayer hp = target.GetComponentInParent<HumanoidPlayer>();
-            if (hp != null && !hp.info.lootable)
+            if (hp?.info.lootable == false)
             {
                 DoLog($"Player {player.displayName}:{player.UserIDString} looting NPC {hp.info.displayName}");
                 NextTick(player.EndLooting);
@@ -425,7 +426,7 @@ namespace Oxide.Plugins
             if (looter == null || !(entity is PlayerCorpse)) return;
             ulong userId = ((PlayerCorpse)entity).playerSteamID;
             HumanoidInfo hi = null;
-            if (npcs.TryGetValue(userId, out hi))
+            npcs.TryGetValue(userId, out hi);
             if (hi != null)
             {
                 Interface.Oxide.CallHook("OnLootNPC", looter.inventory.loot, entity, userId);
@@ -447,7 +448,7 @@ namespace Oxide.Plugins
 
         #region commands
         [Command("noid")]
-        void cmdNPC(IPlayer iplayer, string command, string[] args)
+        private void cmdNPC(IPlayer iplayer, string command, string[] args)
         {
             BasePlayer player = iplayer.Object as BasePlayer;
             if (args.Length > 0)
@@ -459,8 +460,9 @@ namespace Oxide.Plugins
                     case "show":
                         foreach (KeyValuePair<ulong, HumanoidInfo> pls in npcs)
                         {
-                            (iplayer.Object as BasePlayer).SendConsoleCommand("ddraw.text", 30, Color.green, pls.Value.loc + new Vector3(0, 1.55f, 0), $"<size=20>{pls.Value.displayName}</size>");
-                            (iplayer.Object as BasePlayer).SendConsoleCommand("ddraw.text", 30, Color.green, pls.Value.loc + new Vector3(0, 1.5f, 0), $"<size=20>{pls.Value.loc.ToString()}</size>");
+                            BasePlayer tmpl = iplayer.Object as BasePlayer;
+                            tmpl?.SendConsoleCommand("ddraw.text", 30, Color.green, pls.Value.loc + new Vector3(0, 1.55f, 0), $"<size=20>{pls.Value.displayName}</size>");
+                            tmpl?.SendConsoleCommand("ddraw.text", 30, Color.green, pls.Value.loc + new Vector3(0, 1.5f, 0), $"<size=20>{pls.Value.loc.ToString()}</size>");
                         }
                         break;
                     case "gui":
@@ -507,7 +509,7 @@ namespace Oxide.Plugins
                                     foreach (KeyValuePair<ulong, HumanoidInfo> pls in npcs)
                                     {
                                         DoLog($"Checking match of {nom} to {pls.Value.displayName}");
-                                        if (pls.Value.displayName.ToLower() == nom.ToLower())
+                                        if (string.Equals(pls.Value.displayName, nom, StringComparison.OrdinalIgnoreCase))
                                         {
                                             NpcEditGUI(player, pls.Value.userid);
                                             break;
@@ -746,6 +748,7 @@ namespace Oxide.Plugins
 
         #region Our Inbound Hooks
         private bool IsHumanoid(BasePlayer player) => player.GetComponentInParent<HumanoidPlayer>() != null;
+
         private ulong SpawnHumanoid(Vector3 position, Quaternion currentRot, string name = "noid", bool ephemeral = false, ulong clone = 0)
         {
             foreach (KeyValuePair<ulong, HumanoidInfo> pair in npcs)
@@ -765,6 +768,7 @@ namespace Oxide.Plugins
             SpawnNPC(hi, out npcid);
             return npcid;
         }
+
         private string GetHumanoidName(ulong npcid)
         {
             DoLog($"Looking for humanoid: {npcid.ToString()}");
@@ -773,6 +777,7 @@ namespace Oxide.Plugins
             DoLog($"Found humanoid: {hp.info.displayName}");
             return hp.info.displayName;
         }
+
         private bool RemoveHumanoidById(ulong npcid)
         {
             DoLog($"RemoveHumanoidById called for {npcid.ToString()}");
@@ -785,6 +790,7 @@ namespace Oxide.Plugins
             SaveData();
             return true;
         }
+
         private bool RemoveHumanoidByName(string name)
         {
             DoLog($"RemoveHumanoidByName called for {name}");
@@ -797,6 +803,7 @@ namespace Oxide.Plugins
             SaveData();
             return true;
         }
+
         private void SetHumanoidInfo(ulong npcid, string toset, string data, string rot = null)
         {
             DoLog($"SetHumanoidInfo called for {npcid.ToString()} {toset},{data}");
@@ -923,6 +930,7 @@ namespace Oxide.Plugins
             DoLog("Respawning");
             RespawnNPC(hp.player);
         }
+
         private void GiveHumanoid(ulong npcid, string itemname, string loc = "wear", ulong skinid = 0, int count = 1)
         {
             HumanoidPlayer npc = FindHumanoidByID(npcid);
@@ -977,7 +985,7 @@ namespace Oxide.Plugins
             isopen.Remove(uid);
         }
 
-        void NPCSelectGUI(BasePlayer player)
+        private void NPCSelectGUI(BasePlayer player)
         {
             if (player == null) return;
             IsOpen(player.userID, true);
@@ -998,7 +1006,7 @@ namespace Oxide.Plugins
                     row = 0;
                     col++;
                 }
-                string color = "#2244cc";
+                const string color = "#2244cc";
 
                 string hName = npc.Value.displayName;
                 float[] posb = GetButtonPositionP(row, col);
@@ -1011,7 +1019,7 @@ namespace Oxide.Plugins
             CuiHelper.AddUi(player, container);
         }
 
-        void NpcEditGUI(BasePlayer player, ulong npc = 0)
+        private void NpcEditGUI(BasePlayer player, ulong npc = 0)
         {
             if (player == null) return;
             IsOpen(player.userID, true);
@@ -1172,9 +1180,9 @@ namespace Oxide.Plugins
                     }
                     else if (isLarge.ContainsKey(info.Key))
                     {
-                        //                        string oldval = info.Value != null ? info.Value : Lang("unset");
-                        //                        UI.Label(ref container, NPCGUI, UI.Color("#535353", 1f), oldval, 12, $"{posb[0]} {posb[1]}", $"{posb[0] + ((posb[2] - posb[0]))} {posb[3]}");
-                        //                        UI.Input(ref container, NPCGUI, UI.Color("#ffffff", 1f), oldval, 12, $"{posb[0]} {posb[1]}", $"{posb[0] + ((posb[2] - posb[0]))} {posb[3]}", $"noid npcset {npc.ToString()} {info.Key} {oldval} ");
+                        //string oldval = info.Value != null ? info.Value : Lang("unset");
+                        //UI.Label(ref container, NPCGUI, UI.Color("#535353", 1f), oldval, 12, $"{posb[0]} {posb[1]}", $"{posb[0] + ((posb[2] - posb[0]))} {posb[3]}");
+                        //UI.Input(ref container, NPCGUI, UI.Color("#ffffff", 1f), oldval, 12, $"{posb[0]} {posb[1]}", $"{posb[0] + ((posb[2] - posb[0]))} {posb[3]}", $"noid npcset {npc.ToString()} {info.Key} {oldval} ");
                     }
                     else if (isBool.ContainsKey(info.Key))
                     {
@@ -1196,12 +1204,12 @@ namespace Oxide.Plugins
             CuiHelper.AddUi(player, container);
         }
 
-        void NPCMessageGUI(BasePlayer player, ulong npc, string field, string message)
+        private void NPCMessageGUI(BasePlayer player, ulong npc, string field, string message)
         {
             if (player == null) return;
         }
 
-        void NPCMonGUI(BasePlayer player, ulong npc, string mon = null, string pos = "start")
+        private void NPCMonGUI(BasePlayer player, ulong npc, string mon = null, string pos = "start")
         {
             if (player == null) return;
             IsOpen(player.userID, true);
@@ -1238,7 +1246,7 @@ namespace Oxide.Plugins
             CuiHelper.AddUi(player, container);
         }
 
-        void NPCKitGUI(BasePlayer player, ulong npc, string kit = null)
+        private void NPCKitGUI(BasePlayer player, ulong npc, string kit = null)
         {
             if (player == null) return;
             IsOpen(player.userID, true);
@@ -1278,7 +1286,7 @@ namespace Oxide.Plugins
             CuiHelper.AddUi(player, container);
         }
 
-        void NPCRoadGUI(BasePlayer player, ulong npc, string road  = null)
+        private void NPCRoadGUI(BasePlayer player, ulong npc, string road  = null)
         {
             if (player == null) return;
             IsOpen(player.userID, true);
@@ -1317,7 +1325,7 @@ namespace Oxide.Plugins
             CuiHelper.AddUi(player, container);
         }
 
-        void NPCLocoGUI(BasePlayer player, ulong npc)
+        private void NPCLocoGUI(BasePlayer player, ulong npc)
         {
             if (player == null) return;
             IsOpen(player.userID, true);
@@ -1328,7 +1336,7 @@ namespace Oxide.Plugins
             UI.Label(ref container, NPCGUL, UI.Color("#ffffff", 1f), description, 18, "0.23 0.92", "0.7 1");
             UI.Button(ref container, NPCGUL, UI.Color("#d85540", 1f), Lang("close"), 12, "0.92 0.93", "0.985 0.98", $"noid sellococlose");
 
-            int col = 0;
+            const int col = 0;
             int row = 0;
 
             HumanoidPlayer hp = FindHumanoidByID(npc);
@@ -1355,7 +1363,7 @@ namespace Oxide.Plugins
         public static IEnumerable<TValue> RandomValues<TKey, TValue>(IDictionary<TKey, TValue> dict)
         {
             System.Random rand = new System.Random();
-            List<TValue> values = Enumerable.ToList(dict.Values);
+            List<TValue> values = dict.Values.ToList();
             int size = dict.Count;
             while (true)
             {
@@ -1409,6 +1417,7 @@ namespace Oxide.Plugins
             }
             SaveData();
         }
+
         public void RespawnNPC(BasePlayer player)
         {
             DoLog($"Attempting to respawn humanoid...");
@@ -1424,6 +1433,7 @@ namespace Oxide.Plugins
                 player.EndSleeping();
             }
         }
+
         private void KillNpc(BasePlayer player)
         {
             List<BasePlayer> players = new List<BasePlayer>();
@@ -1433,6 +1443,7 @@ namespace Oxide.Plugins
                 pl.KillMessage();
             }
         }
+
         private void SpawnNPC(HumanoidInfo info, out ulong npcid)
         {
             DoLog($"Attempting to spawn new humanoid...");
@@ -1472,14 +1483,7 @@ namespace Oxide.Plugins
 
             DoLog($"Spawned NPC with userid {player.UserIDString}");
 
-            if (npcs.ContainsKey(info.userid))
-            {
-                npcs[info.userid] = npc.info;
-            }
-            else
-            {
-                npcs.Add(info.userid, npc.info);
-            }
+            npcs[info.userid] = npc.info;
             SaveData();
         }
 
@@ -1539,21 +1543,21 @@ namespace Oxide.Plugins
 
             // Logic
             public bool enable = true;
-            public bool canmove = false;
-            public bool cansit = false;
-            public bool canride = false;
-            public bool canfly = false;
+            public bool canmove;
+            public bool cansit;
+            public bool canride;
+            public bool canfly;
 
-            public bool ephemeral = false;
-            public bool ahostile = false;
-            public bool hostile = false;
-            public bool defend = false;
-            public bool gather = false;
-            public bool evade = false;
-            public bool follow = false;
-            public bool needsammo = false;
+            public bool ephemeral;
+            public bool ahostile;
+            public bool hostile;
+            public bool defend;
+            public bool gather;
+            public bool evade;
+            public bool follow;
+            public bool needsammo;
             public bool invulnerable = true;
-            public bool lootable = false;
+            public bool lootable;
             public bool entrypause = true;
             public bool respawn = true;
 
@@ -1636,14 +1640,14 @@ namespace Oxide.Plugins
             private float tripTime = 0f;
 
             // Real-time status
-            public bool attacked = false;
-            public bool defending = false;
-            public bool moving = false;
-            public bool sitting = false;
-            public bool riding = false;
-            public bool swimming = false;
-            public bool flying = false;
-            public bool paused = false;
+            public bool attacked;
+            public bool defending;
+            public bool moving;
+            public bool sitting;
+            public bool riding;
+            public bool swimming;
+            public bool flying;
+            public bool paused;
 
             public List<WaypointInfo> cachedWaypoints;
             private int currentWaypoint = -1;
@@ -1681,7 +1685,7 @@ namespace Oxide.Plugins
                 InvokeRepeating("DoAttack", 0f, 0.5f);
             }
 
-            public void FixedUpdate()
+            public void Update()
             {
                 if (npc.player == null) return;
                 if (attacked && npc.info.defend && npc.info.locomode != LocoMode.Defend)
@@ -1794,7 +1798,7 @@ namespace Oxide.Plugins
                 }
 
                 //HeldEntity weapon = npc.player.GetHeldEntity() ?? null;
-                if (firstWeapon as BaseProjectile == null)
+                if (!(firstWeapon is BaseProjectile))
                 {
                     npc.EquipFirstWeapon();
                     if (firstWeapon == null)
@@ -1946,6 +1950,7 @@ namespace Oxide.Plugins
                 //if (GetSpeed() <= 0) return;
                 npc.info.enable = true;
             }
+
             public void Disable()
             {
                 npc.info.enable = false;
@@ -1953,7 +1958,7 @@ namespace Oxide.Plugins
 
             public bool IsSitting()
             {
-                if (sitting == true)
+                if (sitting)
                 {
                     Instance.DoLog($"{npc.info.displayName} is sitting.");
                     return true;
@@ -1970,6 +1975,7 @@ namespace Oxide.Plugins
 
                 return false;
             }
+
             public void Stand()
             {
                 if (sitting)
@@ -1980,6 +1986,7 @@ namespace Oxide.Plugins
                     sitting = false;
                 }
             }
+
             public void Sit()
             {
                 if (sitting) return;
@@ -2043,6 +2050,7 @@ namespace Oxide.Plugins
                 currentWaypoint = 0;
                 return;
             }
+
             public void Gather()
             {
                 Instance.Puts($"Gather() called for {npc.info.displayName}");
@@ -2108,7 +2116,7 @@ namespace Oxide.Plugins
                 if (pause)
                 {
                     HandlePause();
-                    npc.player.SignalBroadcast(BaseEntity.Signal.Gesture, "shrug");
+                    npc.player.SignalBroadcast(BaseEntity.Signal.Gesture, "wave");
                 }
                 if (moving)
                 {
@@ -2121,7 +2129,7 @@ namespace Oxide.Plugins
 
             public void Ride()
             {
-                if (npc.info.canride == false) return;
+                if (!npc.info.canride) return;
                 RidableHorse horse = npc.player.GetMountedVehicle() as RidableHorse;
                 if (horse == null)
                 {
@@ -2166,7 +2174,8 @@ namespace Oxide.Plugins
                 }
 
                 bool hasMoved = targetDir != Vector3.zero && Vector3.Distance(horse.transform.position, npc.info.loc) > 0.5f;
-                bool isVisible = npc.target != null && npc.target.IsVisible(npc.player.eyes.position, (npc.target as BasePlayer).eyes.position, 200);
+                BasePlayer ptarget = npc.target as BasePlayer;
+                bool isVisible = ptarget == null ? false : npc.target?.IsVisible(npc.player.eyes.position, ptarget.eyes.position, 200) == true;
                 Vector2 randompos = UnityEngine.Random.insideUnitCircle * npc.info.damageDistance;
                 if (npc.target != null)
                 {
@@ -2210,7 +2219,7 @@ namespace Oxide.Plugins
                 RideMove(horse, distance, angle, rand);
             }
 
-            void RideMove(RidableHorse horse, float distance, float angle, bool rand)
+            private void RideMove(RidableHorse horse, float distance, float angle, bool rand)
             {
                 InputMessage message = new InputMessage() { buttons = 0 };
                 if (distance > npc.info.damageDistance)
@@ -2241,7 +2250,10 @@ namespace Oxide.Plugins
             {
                 if (string.IsNullOrEmpty(npc.info.waypoint)) return;
                 object cwaypoints = Interface.Oxide.CallHook("GetWaypointsList", npc.info.waypoint);
-                if (cwaypoints == null) cachedWaypoints = null;
+                if (cwaypoints == null)
+                {
+                    cachedWaypoints = null;
+                }
                 else
                 {
                     cachedWaypoints = new List<WaypointInfo>();
@@ -2255,7 +2267,7 @@ namespace Oxide.Plugins
                         }
                     }
 
-                    if (cachedWaypoints.Count <= 0) cachedWaypoints = null;
+                    if (cachedWaypoints.Count == 0) cachedWaypoints = null;
 
                     Instance.DoLog($"[HumanoidMovement] Waypoints: {cachedWaypoints.Count.ToString()} {npc.player.displayName}");
                 }
@@ -2275,7 +2287,7 @@ namespace Oxide.Plugins
                 if (sitting) speed = 0;
                 //if (returning) speed = 7;
                 else if (speed == -1) speed = npc.info.speed;
-                if (IsSwimming()) speed = speed / 2f;
+                if (IsSwimming()) speed /= 2f;
 
                 return speed;
             }
@@ -2360,7 +2372,7 @@ namespace Oxide.Plugins
 
                 // Setup road points as waypoints
                 Paths = roads[roadname].points;
-                StartPos = Paths.First();
+                StartPos = Paths[0];
                 EndPos = Paths[1];
                 tripTime = Vector3.Distance(StartPos, EndPos) / GetSpeed(npc.info.speed);
                 npc.info.enable = true;
@@ -2394,7 +2406,7 @@ namespace Oxide.Plugins
                     return hitinfo.point.y;
                 }
                 Instance.DoLog($"[HumanoidMovement] GetGroundY: {position.y.ToString()}");
-                return position.y - .5f;
+                return position.y;// - .5f;
             }
 
             public void FindVictim()
@@ -2450,7 +2462,6 @@ namespace Oxide.Plugins
                 }
                 if (Vector3.Distance(npc.info.loc, npc.info.targetloc) < 30f)//npc.info.damageDistance)
                 {
-
                     //if (!IsLayerBlocked(info.targetloc, 10f, obstructionMask))
                     //{
                     //    //npc.Evade();
@@ -2543,7 +2554,6 @@ namespace Oxide.Plugins
                         npc.info.canmove = true;
                         npc.info.cansit = false;
                         break;
-                    case LocoMode.Default:
                     default:
                         npc.info.cansit = false;
                         npc.info.canride = false;
@@ -2573,6 +2583,7 @@ namespace Oxide.Plugins
                 //Instance.DoLog("Setting player modelState...");
                 player.modelState.onground = true;
             }
+
             public void OnDisable()
             {
                 //StopAllCoroutines();
@@ -2583,6 +2594,7 @@ namespace Oxide.Plugins
             {
                 //Instance.DoLog($"SetInfo called for {player.UserIDString}");
                 this.info = info;
+                this.info.locomode = this.info.defaultLoco;
                 Instance.DoLog("[HumanoidPlayer] Info var set.");
                 if (info == null) return;
                 player.displayName = info.displayName;
@@ -2624,7 +2636,7 @@ namespace Oxide.Plugins
                 if (pos != info.loc)
                 {
                     SetViewAngle(Quaternion.LookRotation(pos - info.loc));
-                    if (wave) player.SignalBroadcast(BaseEntity.Signal.Gesture, "wave");
+                    if (wave) player.SignalBroadcast(BaseEntity.Signal.Gesture, "shrug");
                 }
             }
 
@@ -2702,6 +2714,7 @@ namespace Oxide.Plugins
                 }
                 return null;
             }
+
             public HeldEntity EquipFirstWeapon()
             {
                 if (info.holdingWeapon)
@@ -2825,6 +2838,7 @@ namespace Oxide.Plugins
                 };
                 return container;
             }
+
             public static void Panel(ref CuiElementContainer container, string panel, string color, string min, string max, bool cursor = false)
             {
                 container.Add(new CuiPanel
@@ -2835,6 +2849,7 @@ namespace Oxide.Plugins
                 },
                 panel);
             }
+
             public static void Label(ref CuiElementContainer container, string panel, string color, string text, int size, string min, string max, TextAnchor align = TextAnchor.MiddleCenter)
             {
                 container.Add(new CuiLabel
@@ -2843,8 +2858,8 @@ namespace Oxide.Plugins
                     RectTransform = { AnchorMin = min, AnchorMax = max }
                 },
                 panel);
-
             }
+
             public static void Button(ref CuiElementContainer container, string panel, string color, string text, int size, string min, string max, string command, TextAnchor align = TextAnchor.MiddleCenter)
             {
                 container.Add(new CuiButton
@@ -2855,6 +2870,7 @@ namespace Oxide.Plugins
                 },
                 panel);
             }
+
             public static void Input(ref CuiElementContainer container, string panel, string color, string text, int size, string min, string max, string command, TextAnchor align = TextAnchor.MiddleCenter)
             {
                 container.Add(new CuiElement
@@ -2878,6 +2894,7 @@ namespace Oxide.Plugins
                     }
                 });
             }
+
             public static void Icon(ref CuiElementContainer container, string panel, string color, string imageurl, string min, string max)
             {
                 container.Add(new CuiElement
@@ -2900,6 +2917,7 @@ namespace Oxide.Plugins
                     }
                 });
             }
+
             public static string Color(string hexColor, float alpha)
             {
                 if (hexColor.StartsWith("#"))
@@ -2948,6 +2966,7 @@ namespace Oxide.Plugins
             [FieldOffset(0)]
             public int tmp;
         }
+
         public static float InvSqrt(float z)
         {
             if (z == 0) return 0;
@@ -2956,7 +2975,7 @@ namespace Oxide.Plugins
             float xhalf = 0.5f * z;
             u.f = z;
             u.tmp = 0x5f375a86 - (u.tmp >> 1);
-            u.f = u.f * (1.5f - xhalf * u.f * u.f);
+            u.f *= 1.5f - (xhalf * u.f * u.f);
             return u.f * z;
         }
 
@@ -2985,6 +3004,7 @@ namespace Oxide.Plugins
         }
 
         private int RowNumber(int max, int count) => Mathf.FloorToInt(count / max);
+
         private float[] GetButtonPosition(int rowNumber, int columnNumber)
         {
             float offsetX = 0.05f + (0.096f * columnNumber);
@@ -2992,6 +3012,7 @@ namespace Oxide.Plugins
 
             return new float[] { offsetX, offsetY, offsetX + 0.196f, offsetY + 0.03f };
         }
+
         private float[] GetButtonPositionP(int rowNumber, int columnNumber)
         {
             float offsetX = 0.05f + (0.126f * columnNumber);
@@ -3072,7 +3093,7 @@ namespace Oxide.Plugins
             return result;
         }
 
-        string RandomString()
+        private string RandomString()
         {
             const string chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
             List<char> charList = chars.ToList();
@@ -3081,16 +3102,17 @@ namespace Oxide.Plugins
 
             for (int i = 0; i <= UnityEngine.Random.Range(5, 10); i++)
             {
-                random = random + charList[UnityEngine.Random.Range(0, charList.Count - 1)];
+                random += charList[UnityEngine.Random.Range(0, charList.Count - 1)];
             }
             return random;
         }
 
-        void FindMonuments()
+        private void FindMonuments()
         {
             Vector3 extents = Vector3.zero;
             float realWidth = 0f;
             string name = null;
+
             foreach (MonumentInfo monument in UnityEngine.Object.FindObjectsOfType<MonumentInfo>())
             {
                 if (monument.name.Contains("power_sub")) continue;
@@ -3112,7 +3134,7 @@ namespace Oxide.Plugins
                     name = Regex.Match(monument.name, @"\w{6}\/(.+\/)(.+)\.(.+)").Groups[2].Value.Replace("_", " ").Replace(" 1", "").Titleize();
                 }
                 if (monPos.ContainsKey(name)) continue;
-                if (cavePos.ContainsKey(name)) name = name + RandomString();
+                if (cavePos.ContainsKey(name)) name += RandomString();
 
                 extents = monument.Bounds.extents;
                 if (realWidth > 0f)
@@ -3124,25 +3146,29 @@ namespace Oxide.Plugins
                 {
                     cavePos.Add(name, monument.transform.position);
                 }
-                else if (monument.name.Contains("compound") && monPos["outpost"] == null)
+                else if (monument.name.Contains("compound") && !monPos.ContainsKey("outpost"))
                 {
+                    Puts("ADDING OUTPOST");
                     List<BaseEntity> ents = new List<BaseEntity>();
                     Vis.Entities(monument.transform.position, 50, ents);
                     foreach (BaseEntity entity in ents)
                     {
+                        if (monPos.ContainsKey("outpost")) continue;
                         if (entity.PrefabName.Contains("piano"))
                         {
+                            Puts("ADDING OUTPOST PIANO");
                             monPos.Add("outpost", entity.transform.position + new Vector3(1f, 0.1f, 1f));
                             monSize.Add("outpost", extents);
                         }
                     }
                 }
-                else if (monument.name.Contains("bandit") && monPos["bandit"] == null)
+                else if (monument.name.Contains("bandit") && !monPos.ContainsKey("bandit"))
                 {
                     List<BaseEntity> ents = new List<BaseEntity>();
                     Vis.Entities(monument.transform.position, 50, ents);
                     foreach (BaseEntity entity in ents)
                     {
+                        if (monPos.ContainsKey("bandit")) continue;
                         if (entity.PrefabName.Contains("workbench"))
                         {
                             monPos.Add("bandit", Vector3.Lerp(monument.transform.position, entity.transform.position, 0.45f) + new Vector3(0, 1.5f, 0));
