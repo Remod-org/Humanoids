@@ -63,9 +63,9 @@ namespace Oxide.Plugins
         private const string NPCGUV = "npc.setval";
         private readonly List<string> guis = new List<string>() { NPCGUI, NPCGUK, NPCGUL, NPCGUM, NPCGUN, NPCGUR, NPCGUS, NPCGUV };
 
-        private bool newsave = false;
+        private bool newsave;
 
-        public static Humanoids Instance = null;
+        public static Humanoids Instance;
         private static Dictionary<ulong, HumanoidInfo> npcs = new Dictionary<ulong, HumanoidInfo>();
 
         // This is critical to the speed of operations on FindHumanoidByID/Name
@@ -142,8 +142,7 @@ namespace Oxide.Plugins
 
             LoadData();
 
-            HumanoidPlayer[] allHumanoids = Resources.FindObjectsOfTypeAll<HumanoidPlayer>();
-            foreach (HumanoidPlayer obj in allHumanoids)
+            foreach (HumanoidPlayer obj in Resources.FindObjectsOfTypeAll<HumanoidPlayer>())
             {
                 if (configData.Options.zeroOnWipe && newsave)
                 {
@@ -153,8 +152,7 @@ namespace Oxide.Plugins
             }
             newsave = false;
 
-            HumanoidMovement[] allMove = Resources.FindObjectsOfTypeAll<HumanoidMovement>();
-            foreach (HumanoidMovement obj in allMove)
+            foreach (HumanoidMovement obj in Resources.FindObjectsOfTypeAll<HumanoidMovement>())
             {
                 UnityEngine.Object.Destroy(obj);
             }
@@ -212,8 +210,7 @@ namespace Oxide.Plugins
                 if (isopen.Contains(player.userID)) isopen.Remove(player.userID);
             }
 
-            HumanoidPlayer[] hp = Resources.FindObjectsOfTypeAll<HumanoidPlayer>();
-            foreach (HumanoidPlayer obj in hp)
+            foreach (HumanoidPlayer obj in Resources.FindObjectsOfTypeAll<HumanoidPlayer>())
             {
                 Puts($"Killing player object {obj.player.userID.ToString()}");
                 obj.movement.Stand();
@@ -611,8 +608,7 @@ namespace Oxide.Plugins
                             CuiHelper.DestroyUi(player, NPCGUK);
                             ulong userid = ulong.Parse(args[1]);
                             npc = npcs[userid];
-                            string kitname = args[2];
-                            npc.kit = kitname;
+                            npc.kit = args[2];
                             HumanoidPlayer hp = FindHumanoidByID(userid);
                             SaveData();
                             RespawnNPC(hp.player);
@@ -630,7 +626,6 @@ namespace Oxide.Plugins
                                 case "end":
                                     npc.monend = args[2];
                                     break;
-                                case "start":
                                 default:
                                     npc.monstart = args[2];
                                     break;
@@ -647,8 +642,7 @@ namespace Oxide.Plugins
                             CuiHelper.DestroyUi(player, NPCGUR);
                             ulong userid = ulong.Parse(args[1]);
                             npc = npcs[userid];
-                            string roadname = args[2] + " " + args[3];
-                            npc.roadname = roadname;
+                            npc.roadname = args[2] + " " + args[3];
                             HumanoidPlayer hp = FindHumanoidByID(userid);
                             SaveData();
                             RespawnNPC(hp.player);
@@ -891,7 +885,6 @@ namespace Oxide.Plugins
                 case "locomode":
                     switch (Convert.ToInt32(data))
                     {
-                        case 0:
                         default:
                             hp.info.locomode = LocoMode.Default;
                             break;
@@ -958,7 +951,6 @@ namespace Oxide.Plugins
                             if (item.info.category == ItemCategory.Weapon) npc.EquipFirstWeapon();
                         }
                         break;
-                    case "wear":
                     default:
                         {
                             Item item = ItemManager.CreateByName(itemname, 1, skinid);
@@ -1375,8 +1367,7 @@ namespace Oxide.Plugins
         {
             HumanoidPlayer hp;
             if (hpcacheid.TryGetValue(userid, out hp)) return hp;
-            HumanoidPlayer[] allHumanoids = Resources.FindObjectsOfTypeAll<HumanoidPlayer>();
-            foreach (HumanoidPlayer humanplayer in allHumanoids)
+            foreach (HumanoidPlayer humanplayer in Resources.FindObjectsOfTypeAll<HumanoidPlayer>())
             {
                 DoLog($"Is {humanplayer.player.displayName} a Humanoid?");
                 if (humanplayer.player.userID != userid && humanplayer.info.userid != userid) continue;
@@ -1390,8 +1381,7 @@ namespace Oxide.Plugins
         {
             HumanoidPlayer hp;
             if (hpcachenm.TryGetValue(name, out hp)) return hp;
-            HumanoidPlayer[] allHumanoids = Resources.FindObjectsOfTypeAll<HumanoidPlayer>();
-            foreach (HumanoidPlayer humanplayer in allHumanoids)
+            foreach (HumanoidPlayer humanplayer in Resources.FindObjectsOfTypeAll<HumanoidPlayer>())
             {
                 if (humanplayer.info.displayName != name) continue;
                 hpcachenm[name] = humanplayer;
@@ -2392,8 +2382,7 @@ namespace Oxide.Plugins
                     return point - 0.65f;
                 }
 
-                float y = TerrainMeta.HeightMap.GetHeight(position);
-                return y;
+                return TerrainMeta.HeightMap.GetHeight(position);
                 //return GetGroundY(position);
             }
 
@@ -2764,11 +2753,6 @@ namespace Oxide.Plugins
             public int topo;
         }
 
-//        private class StoredData
-//        {
-//            public List<HumanoidInfo> Humanoids = new List<HumanoidInfo>();
-//        }
-
         private class UnityQuaternionConverter : JsonConverter
         {
             public override void WriteJson(JsonWriter writer, object value, JsonSerializer serializer)
@@ -2823,7 +2807,7 @@ namespace Oxide.Plugins
         {
             public static CuiElementContainer Container(string panel, string color, string min, string max, bool useCursor = false, string parent = "Overlay")
             {
-                CuiElementContainer container = new CuiElementContainer()
+                return new CuiElementContainer()
                 {
                     {
                         new CuiPanel
@@ -2836,7 +2820,6 @@ namespace Oxide.Plugins
                         panel
                     }
                 };
-                return container;
             }
 
             public static void Panel(ref CuiElementContainer container, string panel, string color, string min, string max, bool cursor = false)
@@ -2992,12 +2975,6 @@ namespace Oxide.Plugins
                 case "y":
                 case "on":
                     return true;
-                case "f":
-                case "false":
-                case "0":
-                case "no":
-                case "n":
-                case "off":
                 default:
                     return false;
             }
@@ -3062,13 +3039,11 @@ namespace Oxide.Plugins
             // split the items
             string[] sArray = sVector.Split(',');
 
-            // store as a Vector3
-            Vector3 result = new Vector3(
+            return new Vector3(
                 float.Parse(sArray[0]),
                 float.Parse(sArray[1]),
-                float.Parse(sArray[2]));
-
-            return result;
+                float.Parse(sArray[2])
+            );
         }
 
         public static Quaternion StringToQuaternion(string sQuaternion)
@@ -3083,14 +3058,12 @@ namespace Oxide.Plugins
             string[] sArray = sQuaternion.Split(',');
 
             // store as a Vector3
-            Quaternion result = new Quaternion(
+            return new Quaternion(
                 float.Parse(sArray[0]),
                 float.Parse(sArray[1]),
                 float.Parse(sArray[2]),
                 float.Parse(sArray[3])
             );
-
-            return result;
         }
 
         private string RandomString()
@@ -3223,8 +3196,8 @@ namespace Oxide.Plugins
 
         public class Options
         {
-            public bool debug = false;
-            public bool zeroOnWipe = true;
+            public bool debug;
+            public bool zeroOnWipe;
         }
         #endregion
     }
