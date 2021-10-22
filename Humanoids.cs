@@ -314,12 +314,9 @@ namespace Oxide.Plugins
         private void OnEntityDeath(BaseCombatEntity entity, HitInfo hitinfo)
         {
             var hp = entity.GetComponent<HumanoidPlayer>();
-            if (hp != null)
+            if (hp?.info.respawn == true)
             {
-                if (hp.info.respawn)
-                {
-                    timer.Once(hp.info.respawnTimer, () => RespawnNPC(hp.player));
-                }
+                timer.Once(hp.info.respawnTimer, () => RespawnNPC(hp.info.userid));
             }
         }
 
@@ -1366,13 +1363,18 @@ namespace Oxide.Plugins
         private HumanoidPlayer FindHumanoidByID(ulong userid, bool playerid = false)
         {
             HumanoidPlayer hp;
-            if (hpcacheid.TryGetValue(userid, out hp)) return hp;
+            if (hpcacheid.TryGetValue(userid, out hp))
+            {
+                DoLog($"Found matching NPC for userid {userid.ToString()} in cache");
+                return hp;
+            }
             foreach (HumanoidPlayer humanplayer in Resources.FindObjectsOfTypeAll<HumanoidPlayer>())
             {
                 DoLog($"Is {humanplayer.player.displayName} a Humanoid?");
                 if (humanplayer.player.userID != userid && humanplayer.info.userid != userid) continue;
-                hpcacheid[userid] = humanplayer;
-                return humanplayer;
+
+                DoLog($"Found matching NPC for userid {userid.ToString()}");
+                return hpcacheid[userid];
             }
             return null;
         }
@@ -1408,19 +1410,50 @@ namespace Oxide.Plugins
             SaveData();
         }
 
+        private BasePlayer FindPlayerByID(ulong userid)
+        {
+            DoLog($"Searching for player object with userid {userid.ToString()}");
+            foreach (BasePlayer player in Resources.FindObjectsOfTypeAll<BasePlayer>())
+            {
+                if (player.userID == userid)
+                {
+                    DoLog("..found one!");
+                    return player;
+                }
+            }
+            DoLog("..found NONE");
+            return null;
+        }
+
+        public void RespawnNPC(ulong userid)
+        {
+            DoLog("Attempting to respawn humanoid by userid...");
+            BasePlayer player = FindPlayerByID(userid);
+            if (player != null)
+            {
+                RespawnNPC(player);
+                return;
+            }
+            ulong x;
+            SpawnNPC(npcs[userid], out x);
+        }
+
         public void RespawnNPC(BasePlayer player)
         {
-            DoLog($"Attempting to respawn humanoid...");
+            DoLog("Attempting to respawn humanoid...");
             HumanoidPlayer n = FindHumanoidByID(player.userID, true);
             HumanoidInfo info = n.info;
             if (player != null && info != null)
             {
-                KillNpc(player);
-                hpcacheid.Remove(player.userID);
-                hpcachenm.Remove(player.name);
+                if (!(player.IsDead() || player.IsDestroyed))
+                {
+                    KillNpc(player);
+                    hpcacheid.Remove(player.userID);
+                    hpcachenm.Remove(player.name);
+                }
                 ulong x = 0;
                 SpawnNPC(info, out x);
-                player.EndSleeping();
+                //player.EndSleeping();
             }
         }
 
@@ -1454,8 +1487,8 @@ namespace Oxide.Plugins
             npc.SetInfo(info);
 
             player.Spawn();
-            //hpcache[info.userid] = npc;
-            //hpcachen[info.displayName] = npc;
+            hpcacheid[info.userid] = npc;
+            hpcachenm[info.displayName] = npc;
 
             info.userid = player.userID;
             if (info.loc != Vector3.zero)
@@ -3121,7 +3154,6 @@ namespace Oxide.Plugins
                 }
                 else if (monument.name.Contains("compound") && !monPos.ContainsKey("outpost"))
                 {
-                    Puts("ADDING OUTPOST");
                     List<BaseEntity> ents = new List<BaseEntity>();
                     Vis.Entities(monument.transform.position, 50, ents);
                     foreach (BaseEntity entity in ents)
@@ -3129,7 +3161,6 @@ namespace Oxide.Plugins
                         if (monPos.ContainsKey("outpost")) continue;
                         if (entity.PrefabName.Contains("piano"))
                         {
-                            Puts("ADDING OUTPOST PIANO");
                             monPos.Add("outpost", entity.transform.position + new Vector3(1f, 0.1f, 1f));
                             monSize.Add("outpost", extents);
                         }
@@ -3159,9 +3190,6 @@ namespace Oxide.Plugins
                     monSize.Add(name, extents);
                 }
             }
-            monPos.OrderBy(x => x.Key);
-            monSize.OrderBy(x => x.Key);
-            cavePos.OrderBy(x => x.Key);
         }
         #endregion
 
