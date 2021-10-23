@@ -386,7 +386,7 @@ namespace Oxide.Plugins
             HumanoidPlayer hp = target.GetComponentInParent<HumanoidPlayer>();
             if (hp?.info.lootable == false)
             {
-                DoLog($"Player {player.displayName}:{player.UserIDString} looting NPC {hp.info.displayName}");
+                DoLog($"Player {player.displayName}:{player.UserIDString} looting Humanoid {hp.info.displayName}");
                 NextTick(player.EndLooting);
                 return true;
             }
@@ -396,16 +396,19 @@ namespace Oxide.Plugins
         private object CanLootEntity(BasePlayer player, LootableCorpse corpse)
         {
             if (player == null || corpse == null) return null;
-            HumanoidPlayer hp = corpse.GetComponentInParent<HumanoidPlayer>();
-            if (hp == null) return null;
-            DoLog($"Player {player.displayName}:{player.UserIDString} looting NPC {corpse.name}:{corpse.playerSteamID.ToString()}");
-            if (hp.info.lootable)
+            if (hpcacheid.ContainsKey(corpse.playerSteamID))
             {
-                NextTick(player.EndLooting);
-                return null;
+                HumanoidPlayer hp = hpcacheid[corpse.playerSteamID];
+                if (hp == null) return null;
+                DoLog($"Player {player.displayName}:{player.UserIDString} looting Humanoid {corpse.name}:{corpse.playerSteamID.ToString()}");
+                if (!hp.info.lootable)
+                {
+                    NextTick(player.EndLooting);
+                    return true;
+                }
             }
 
-            return true;
+            return null;
         }
 
         private void OnLootPlayer(BasePlayer looter, BasePlayer target)
