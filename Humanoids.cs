@@ -55,8 +55,8 @@ namespace Oxide.Plugins
         private const string permNPCGuiUse = "humanoid.use";
         private const string NPCGUI = "npc.editor";
         private const string NPCGUK = "npc.kitselect";
-        private const string NPCGUM = "npc.monselect";
         private const string NPCGUL = "npc.locoselect";
+        private const string NPCGUM = "npc.monselect";
         private const string NPCGUN = "npc.kitsetnum";
         private const string NPCGUR = "npc.roadselect";
         private const string NPCGUS = "npc.select";
@@ -81,6 +81,7 @@ namespace Oxide.Plugins
         private readonly static int playerMask = LayerMask.GetMask("Player (Server)");
         private readonly static int groundLayer = LayerMask.GetMask("Construction", "Terrain", "World");
         private readonly static int obstructionMask = LayerMask.GetMask(new[] { "Construction", "Deployed", "Clutter" });
+        private readonly static int constructionMask = LayerMask.GetMask(new[] { "Construction", "Deployed", "Clutter" });
         private readonly static int terrainMask = LayerMask.GetMask(new[] { "Terrain", "Tree" });
         private static int targetLayer;
         #endregion
@@ -374,7 +375,7 @@ namespace Oxide.Plugins
                 {
                     return true;
                 }
-                //hp.movement.Evade();
+                hp.movement.Evade();
             }
             return null;
         }
@@ -728,9 +729,9 @@ namespace Oxide.Plugins
                         break;
                     case "close":
                         IsOpen(player.userID, false);
-                        CuiHelper.DestroyUi(player, NPCGUS);
                         CuiHelper.DestroyUi(player, NPCGUI);
                         CuiHelper.DestroyUi(player, NPCGUK);
+                        CuiHelper.DestroyUi(player, NPCGUS);
                         break;
                 }
             }
@@ -811,6 +812,10 @@ namespace Oxide.Plugins
                     break;
                 case "entrypausetime":
                     hp.info.entrypausetime = Convert.ToSingle(data);
+                    break;
+                case "health":
+                    hp.info.health = Convert.ToSingle(data);
+                    hp.UpdateHealth(hp.info);
                     break;
                 case "name":
                 case "displayName":
@@ -1047,6 +1052,7 @@ namespace Oxide.Plugins
                     { "displayName", npcs[npc].displayName },
                     { "kit", npcs[npc].kit },
                     { "loc", npcs[npc].loc.ToString() },
+                    { "health", npcs[npc].health.ToString() },
                     { "invulnerable", npcs[npc].invulnerable.ToString() },
                     { "lootable", npcs[npc].lootable.ToString() },
                     { "ahostile", npcs[npc].ahostile.ToString() },
@@ -1469,7 +1475,7 @@ namespace Oxide.Plugins
 
         private void SpawnNPC(HumanoidInfo info, out ulong npcid)
         {
-            DoLog($"Attempting to spawn new humanoid...");
+            DoLog("Attempting to spawn new humanoid...");
             if (info.userid == 0)
             {
                 info.userid = (ulong)UnityEngine.Random.Range(0, 2147483647);
@@ -1481,12 +1487,13 @@ namespace Oxide.Plugins
                 if (lurker.displayName == info.displayName) lurker.Kill();
             }
             BasePlayer player = GameManager.server.CreateEntity("assets/prefabs/player/player.prefab", info.loc, info.rot).ToPlayer();
-            DoLog($"Player object created...");
+            DoLog("Player object created...");
             HumanoidPlayer npc = player.gameObject.AddComponent<HumanoidPlayer>();
-            DoLog($"Humanoid object added to player...");
+            DoLog("Humanoid object added to player...");
             npc.SetInfo(info);
 
             player.Spawn();
+            npc.UpdateHealth(info);
             hpcacheid[info.userid] = npc;
             hpcachenm[info.displayName] = npc;
 
@@ -1579,10 +1586,10 @@ namespace Oxide.Plugins
             public bool evade;
             public bool follow;
             public bool needsammo;
-            public bool invulnerable = true;
+            public bool invulnerable;
             public bool lootable;
-            public bool entrypause = true;
-            public bool respawn = true;
+            public bool entrypause;
+            public bool respawn;
 
             // Location and movement
             public float speed;
@@ -1590,13 +1597,14 @@ namespace Oxide.Plugins
             public Vector3 loc;
             public Quaternion rot;
             public Vector3 targetloc;
-            public float maxDistance = 100f;
-            public float attackDistance = 30f;
-            public float damageDistance = 20f;
-            public float damageAmount = 1f;
-            public float followTime = 30f;
-            public float entrypausetime = 5f;
-            public float respawnTimer = 30f;
+            public float health;
+            public float maxDistance;
+            public float attackDistance;
+            public float damageDistance;
+            public float damageAmount;
+            public float followTime;
+            public float entrypausetime;
+            public float respawnTimer;
             public string roadname;
             public string monstart;
             public string monend;
@@ -1608,39 +1616,23 @@ namespace Oxide.Plugins
             public HumanoidInfo(ulong uid, Vector3 position, Quaternion rotation)
             {
                 displayName = "Noid";
+                enable = true;
                 invulnerable = true;
-                //health = 50;
-                ahostile = false;
-                hostile = false;
-                needsammo = true;
-                //dropWeapon = true;
+                entrypause = true;
                 respawn = true;
-                respawnTimer = 30;
+                speed = 3f;
                 loc = position;
                 rot = rotation;
-                //collisionRadius = 10;
-                damageDistance = 3;
-                damageAmount = 10;
-                attackDistance = 100;
-                maxDistance = 200;
-                //hitchance = 0.75f;
-                speed = 3;
-                //stopandtalk = true;
-                //stopandtalkSeconds = 3;
-                enable = true;
-                //persistent = true;
-                lootable = false;
-                entrypause = true;
-                entrypausetime = 5f;
-                defend = false;
-                gather = false;
-                evade = false;
-                //evdist = 0f;
-                follow = false;
+
+                health = 50f;
+                maxDistance = 100f;
+                attackDistance = 30f;
+                damageDistance = 20f;
+                damageAmount = 1f;
                 followTime = 30f;
-                cansit = false;
-                canride = false;
-                //damageInterval = 2;
+                entrypausetime = 5f;
+                respawnTimer = 30f;
+                locomode = LocoMode.Default;
 
                 for (int i = 0; i < (int)DamageType.LAST; i++)
                 {
@@ -1676,23 +1668,23 @@ namespace Oxide.Plugins
             private int currentWaypoint = -1;
 
             public float followDistance = 3.5f;
-            private readonly float lastHit = 0f;
+            private readonly float lastHit;
 
-            public int noPath = 0;
+            public int noPath;
             public bool shouldMove = true;
 
-            private readonly float startedReload = 0f;
-            private readonly float startedFollow = 0f;
+            private readonly float startedReload;
+            private readonly float startedFollow;
 
             private readonly Collider collider;
 
-            public BaseCombatEntity attackEntity = null;
-            public BaseEntity followEntity = null;
+            public BaseCombatEntity attackEntity;
+            public BaseEntity followEntity;
             public Vector3 targetPosition = Vector3.zero;
 
             public List<Vector3> pathFinding;
 
-            public HeldEntity firstWeapon = null;
+            public HeldEntity firstWeapon;
             public bool startmoving = true;
 
             public float wpupdatetime = 0;
@@ -1803,10 +1795,71 @@ namespace Oxide.Plugins
 //                Instance.DoLog($"SetMovementPoint({currentWaypoint.ToString()}) Start: {StartPos.ToString()}, current {npc.info.loc.ToString()}, End: {endpos.ToString()}), time: {ts}");
             }
 
+            public void Evade()
+            {
+                if (IsSwimming()) return;
+                if (!npc.info.evade) return;
+
+                Instance.DoLog("Evading...");
+
+                //float evd = UnityEngine.Random.Range(-npc.info.evdist/2, npc.info.evdist/2);
+                //float evd = UnityEngine.Random.Range(-npc.info.evdist, npc.info.evdist);
+                float evd = UnityEngine.Random.Range(-2, 2);
+                //Vector3 ev = new Vector3(UnityEngine.Random.Range(-npc.info.evdist, npc.info.evdist), 0, UnityEngine.Random.Range(-npc.info.evdist, npc.info.evdist));
+                Vector3 ev = new Vector3(evd, 0, evd);
+                Vector3 newpos = npc.player.transform.position + ev;
+
+                Instance.DoLog($"  first trying new position {newpos.ToString()}");
+
+                RaycastHit hitinfo;
+                int i = 0;
+                while (Physics.OverlapSphere(newpos, 2, constructionMask) != null)
+                {
+                    newpos.x += UnityEngine.Random.Range(-0.2f, 0.2f);
+                    newpos.y = GetGroundY(newpos); //UnityEngine.Random.Range(-0.1f, 0.1f);
+                    newpos.z += UnityEngine.Random.Range(-0.2f, 0.2f);
+
+                    Instance.DoLog($"  trying new position {newpos.ToString()}");
+
+                    if (Physics.Raycast(newpos, Vector3Down, out hitinfo, 0.1f, groundLayer))
+                    {
+                        Instance.DoLog($"  found ground or construction at {newpos.ToString()}");
+                        break;
+                    }
+
+                    i++;
+                    if (i > 100) break;
+                }
+                npc.player.MovePosition(newpos);
+                npc.LookToward(attackEntity.transform.position);
+            }
+
             private void DoAttack()
             {
                 if (!defending) return;
                 npc.LookToward(attackEntity.transform.position);
+                BaseProjectile weapon = firstWeapon as BaseProjectile;
+
+                if (firstWeapon?.IsDestroyed != false || (weapon?.primaryMagazine.contents == 0 && npc.info.needsammo))
+                {
+                    firstWeapon = npc.EquipFirstWeapon();
+                    weapon = firstWeapon as BaseProjectile;
+                    npc.SetActive(0);
+                }
+
+                Item attackitem = firstWeapon?.GetItem();
+                if (attackitem == null)
+                {
+                    attacked = false;
+                    defending = false;
+                    npc.info.locomode = npc.info.defaultLoco;
+                    return;
+                }
+                if (attackitem.uid != npc.player.svActiveItemID)
+                {
+                    npc.SetActive(attackitem.uid);
+                }
+
                 FiringEffect(attackEntity, firstWeapon as BaseProjectile, npc.info.damageAmount, false); // miss is based on a hitchance calc. false for now
             }
 
@@ -1927,6 +1980,7 @@ namespace Oxide.Plugins
                 else if (attacked && npc.info.locomode == LocoMode.Defend)
                 {
                     Defend();
+                    return;
                 }
                 elapsedTime += Time.deltaTime;
                 waypointDone = Mathf.InverseLerp(0f, tripTime, elapsedTime);
@@ -2025,10 +2079,10 @@ namespace Oxide.Plugins
                     Instance.DoLog($"[HumanoidMovement] {npc.player.displayName} trying to sit in chair...");
                     if (mountable.IsMounted())
                     {
-                        Instance.DoLog($"[HumanoidMovement] Someone is sitting here.");
+                        Instance.DoLog("[HumanoidMovement] Someone is sitting here.");
                         continue;
                     }
-                    Instance.DoLog($"[HumanoidMovement] Found an empty chair.");
+                    Instance.DoLog("[HumanoidMovement] Found an empty chair.");
                     mountable.MountPlayer(npc.player);
                     npc.player.OverrideViewAngles(mountable.mountAnchor.transform.rotation.eulerAngles);
                     npc.player.eyes.NetworkUpdate(mountable.mountAnchor.transform.rotation);
@@ -2071,7 +2125,6 @@ namespace Oxide.Plugins
                 moving = true;
                 EndPos = npc.transform.position;
                 currentWaypoint = 0;
-                return;
             }
 
             public void Gather()
@@ -2207,19 +2260,16 @@ namespace Oxide.Plugins
                         targetLoc = npc.target.transform.position;
                         rand = false;
                     }
+                    else if (Vector3.Distance(npc.info.loc, targetHorsePos) > 10 && !hasMoved)
+                    {
+                        npc.target = null;
+                        targetLoc = new Vector3(randompos.x, 0, randompos.y);
+                        targetLoc += npc.info.spawnloc;
+                        targetHorsePos = targetLoc;
+                    }
                     else
                     {
-                        if (Vector3.Distance(npc.info.loc, targetHorsePos) > 10 && !hasMoved)
-                        {
-                            npc.target = null;
-                            targetLoc = new Vector3(randompos.x, 0, randompos.y);
-                            targetLoc += npc.info.spawnloc;
-                            targetHorsePos = targetLoc;
-                        }
-                        else
-                        {
-                            targetLoc = npc.target.transform.position;
-                        }
+                        targetLoc = npc.target.transform.position;
                     }
                 }
                 else
@@ -2484,10 +2534,10 @@ namespace Oxide.Plugins
                 }
                 if (Vector3.Distance(npc.info.loc, npc.info.targetloc) < 30f)//npc.info.damageDistance)
                 {
-                    //if (!IsLayerBlocked(info.targetloc, 10f, obstructionMask))
-                    //{
-                    //    //npc.Evade();
-                    //}
+                    if (!IsLayerBlocked(npc.info.targetloc, 10f, obstructionMask))
+                    {
+                        Evade();
+                    }
 
                     npc.LookToward(npc.info.targetloc);
                     return true;
@@ -2496,10 +2546,10 @@ namespace Oxide.Plugins
                 Vis.Entities(npc.info.loc, npc.info.maxDistance, nearPlayers, playerMask);
                 foreach (BasePlayer player in nearPlayers)
                 {
-                    //if (!IsLayerBlocked(info.targetloc, npc.info.attackDistance, obstructionMask))
-                    //{
-                    //    //npc.Evade();
-                    //}
+                    if (!IsLayerBlocked(npc.info.targetloc, npc.info.attackDistance, obstructionMask))
+                    {
+                        Evade();
+                    }
 
                     npc.LookToward(npc.info.targetloc);
                     return true;
@@ -2508,10 +2558,10 @@ namespace Oxide.Plugins
                 Vis.Entities(npc.info.loc, npc.info.maxDistance, nearAnimals, playerMask);
                 foreach (BaseAnimalNPC player in nearAnimals)
                 {
-                    //if (!IsLayerBlocked(info.targetloc, npc.info.attackDistance, obstructionMask))
-                    //{
-                    //    //npc.Evade();
-                    //}
+                    if (!IsLayerBlocked(npc.info.targetloc, npc.info.attackDistance, obstructionMask))
+                    {
+                        Evade();
+                    }
 
                     npc.LookToward(npc.info.targetloc);
                     return true;
@@ -2653,6 +2703,12 @@ namespace Oxide.Plugins
                 //pathfollower = player.gameObject.AddComponent<PathFollower>();
             }
 
+            public void UpdateHealth(HumanoidInfo info)
+            {
+                player.InitializeHealth(info.health, info.health);
+                player.health = info.health;
+            }
+
             public void LookToward(Vector3 pos, bool wave = false)
             {
                 if (pos != info.loc)
@@ -2720,6 +2776,7 @@ namespace Oxide.Plugins
             {
                 player.svActiveItemID = id;
                 player.SendNetworkUpdate();
+                if (!info.needsammo) return; // TODO
                 player.SignalBroadcast(BaseEntity.Signal.Reload, string.Empty);
             }
 
