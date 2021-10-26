@@ -201,7 +201,7 @@ namespace Oxide.Plugins
 
         private void Unload()
         {
-            foreach (BasePlayer player in BasePlayer.activePlayerList)
+            foreach (BasePlayer player in BasePlayer.activePlayerList.Where(x => x.IsAdmin))
             {
                 foreach (string gui in guis)
                 {
@@ -213,7 +213,7 @@ namespace Oxide.Plugins
 
             foreach (HumanoidPlayer obj in Resources.FindObjectsOfTypeAll<HumanoidPlayer>())
             {
-                Puts($"Killing player object {obj.player.userID.ToString()}");
+                DoLog($"Killing player object {obj.player.userID.ToString()}");
                 obj.movement.Stand();
                 obj.GetComponent<BasePlayer>().Kill();
             }
@@ -594,7 +594,14 @@ namespace Oxide.Plugins
                     case "npcselroad":
                         if (args.Length > 2)
                         {
-                            NPCRoadGUI(player, ulong.Parse(args[1]), args[2] + " " + args[3]);
+                            if (args.Length > 3)
+                            {
+                                NPCRoadGUI(player, ulong.Parse(args[1]), args[2] + " " + args[3]);
+                            }
+                            else
+                            {
+                                NPCRoadGUI(player, ulong.Parse(args[1]), args[2]);
+                            }
                         }
                         break;
                     case "npcselloco":
@@ -659,6 +666,7 @@ namespace Oxide.Plugins
                             LocoMode locomode;
                             Enum.TryParse(args[2], out locomode);
                             npc.locomode = locomode;
+                            npc.defaultLoco = locomode;
                             HumanoidPlayer hp = FindHumanoidByID(userid);
                             SaveData();
                             RespawnNPC(hp.player);
@@ -1618,7 +1626,7 @@ namespace Oxide.Plugins
 
             public HumanoidInfo(ulong uid, Vector3 position, Quaternion rotation)
             {
-                displayName = "Noid";
+                displayName = Instance.configData.Options.defaultName.Length > 0 ? Instance.configData.Options.defaultName : "Noid";
                 enable = true;
                 invulnerable = true;
                 entrypause = true;
@@ -1627,14 +1635,14 @@ namespace Oxide.Plugins
                 loc = position;
                 rot = rotation;
 
-                health = 50f;
+                health = Instance.configData.Options.defaultHealth > 0 ? Instance.configData.Options.defaultHealth : 50f;
                 maxDistance = 100f;
                 attackDistance = 30f;
                 damageDistance = 20f;
                 damageAmount = 1f;
                 followTime = 30f;
                 entrypausetime = 5f;
-                respawnTimer = 30f;
+                respawnTimer = Instance.configData.Options.respawnTimer > 0 ? Instance.configData.Options.respawnTimer : 30f;
                 locomode = LocoMode.Default;
 
                 for (int i = 0; i < (int)DamageType.LAST; i++)
@@ -1653,13 +1661,14 @@ namespace Oxide.Plugins
             public Vector3 lastPos = new Vector3(0f, 0f, 0f);
             public Vector3 nextPos = new Vector3(0f, 0f, 0f);
             private Vector3 currPos = new Vector3(0f, 0f, 0f);
-            private float waypointDone = 0f;
+            private float waypointDone;
             public float elapsedTime = -1f;
-            private float tripTime = 0f;
+            private float tripTime;
 
             // Real-time status
             public bool attacked;
             public bool defending;
+            public bool following;
             public bool moving;
             public bool sitting;
             public bool riding;
@@ -1685,8 +1694,6 @@ namespace Oxide.Plugins
             public BaseEntity followEntity;
             public Vector3 targetPosition = Vector3.zero;
 
-            public List<Vector3> pathFinding;
-
             public HeldEntity firstWeapon;
             public bool startmoving = true;
 
@@ -1708,7 +1715,7 @@ namespace Oxide.Plugins
                 if (npc.player == null) return;
                 if (attacked && npc.info.defend && npc.info.locomode != LocoMode.Defend)
                 {
-                    Instance.Puts($"Humanoid {npc.player.displayName} was attacked, changing locomode to Defend!");
+                    Instance.DoLog($"Humanoid {npc.player.displayName} was attacked, changing locomode to Defend!");
                     npc.info.defaultLoco = npc.info.locomode;
                     npc.info.locomode = LocoMode.Defend;
                     DetermineMove();
@@ -1722,6 +1729,72 @@ namespace Oxide.Plugins
                 }
             }
 
+            public void DetermineMove()
+            {
+                if (!npc.info.canmove) return;
+                if (paused) return;
+                if (npc.player == null) return;
+                //Instance.DoLog($"Determining move based on locomode of {npc.info.locomode.ToString()}");
+
+                switch (npc.info.locomode)
+                {
+                    case LocoMode.Gather:
+                        npc.info.cansit = false;
+                        npc.info.canride = false;
+                        npc.info.canmove = true;
+                        Gather();
+                        break;
+                    case LocoMode.Sit:
+                        npc.info.cansit = true;
+                        npc.info.canride = false;
+                        npc.info.canmove = true;
+                        Sit();
+                        break;
+                    case LocoMode.Ride:
+                        npc.info.cansit = false;
+                        npc.info.canride = true;
+                        npc.info.canmove = true;
+                        Ride();
+                        break;
+                    case LocoMode.Follow:
+                        npc.info.cansit = false;
+                        npc.info.canride = false;
+                        npc.info.canmove = true;
+                        Follow();
+                        break;
+                    case LocoMode.Stand:
+                        npc.info.cansit = false;
+                        npc.info.canride = false;
+                        npc.info.canmove = false;
+                        Stand();
+                        break;
+                    case LocoMode.Road:
+                        npc.info.cansit = false;
+                        npc.info.canride = true;
+                        npc.info.canmove = true;
+                        if (!moving)
+                        {
+                            moving = true;
+                            FindRoad();
+                        }
+                        break;
+                    case LocoMode.Monument:
+                        npc.info.cansit = false;
+                        npc.info.canride = false;
+                        npc.info.canmove = true;
+                        break;
+                    case LocoMode.Defend:
+                        npc.info.canmove = true;
+                        npc.info.cansit = false;
+                        break;
+                    default:
+                        npc.info.cansit = false;
+                        npc.info.canride = false;
+                        npc.info.canmove = false;
+                        break;
+                }
+            }
+
             public void Move()
             {
                 if (elapsedTime == 0f && startmoving)
@@ -1731,6 +1804,53 @@ namespace Oxide.Plugins
                 }
                 Execute_Move();
                 //if (waypointDone >= 1f) elapsedTime = 0f;
+            }
+
+            private void Execute_Move()
+            {
+                if (!npc.info.canmove) return;
+                if (!npc.info.enable) return;
+
+                if (npc.player.IsWounded()) return;
+
+                currPos = Vector3.Lerp(StartPos, EndPos, waypointDone);
+                //currPos.y = GetMoveY(currPos); // Adjust for terrain height
+
+                if ((npc.info.hostile || npc.info.ahostile) && npc.target != null)
+                {
+                    //defending = true;
+                    Defend();
+                    //DoAttack();
+                }
+                else if (attacked && npc.info.locomode == LocoMode.Defend)
+                {
+                    Defend();
+                    return;
+                }
+                elapsedTime += Time.deltaTime;
+                waypointDone = Mathf.InverseLerp(0f, tripTime, elapsedTime);
+                float dte = FlatDistance(currPos, EndPos);
+
+                if (dte == 0 && waypointDone >= 1)// && dfs > 0)
+                {
+                    FindNextWaypoint();
+                    return;
+                }
+
+                //entity.transform.position = currPos;
+                npc.player.transform.position = currPos;
+                npc.info.loc = currPos;
+                //Instance.DoLog($"Current location: {npc.info.loc}");
+                //Instance.DoLog($"Execute_Move from {StartPos.ToString()} to {EndPos.ToString()} within {tripTime.ToString()}s\n\tcurrent: {npc.player.transform.position.ToString()}, next: {currPos.ToString()}, elapsed: {elapsedTime.ToString()} ");
+
+                npc.LookToward(EndPos);
+                npc.player.MovePosition(currPos);
+                //npc.player.SendNetworkUpdate();
+                Vector3 newEyesPos = currPos + new Vector3(0, 1.6f, 0);
+                npc.player.eyes.position.Set(newEyesPos.x, newEyesPos.y, newEyesPos.z);
+                npc.player.EnablePlayerCollider();
+
+                //npc.player.modelState.onground = !IsSwimming();
             }
 
             private void FindNextWaypoint()
@@ -1805,10 +1925,7 @@ namespace Oxide.Plugins
 
                 Instance.DoLog("Evading...");
 
-                //float evd = UnityEngine.Random.Range(-npc.info.evdist/2, npc.info.evdist/2);
-                //float evd = UnityEngine.Random.Range(-npc.info.evdist, npc.info.evdist);
-                float evd = UnityEngine.Random.Range(-2, 2);
-                //Vector3 ev = new Vector3(UnityEngine.Random.Range(-npc.info.evdist, npc.info.evdist), 0, UnityEngine.Random.Range(-npc.info.evdist, npc.info.evdist));
+                float evd = UnityEngine.Random.Range(-0.6f, 0.6f);
                 Vector3 ev = new Vector3(evd, 0, evd);
                 Vector3 newpos = npc.player.transform.position + ev;
 
@@ -1818,9 +1935,9 @@ namespace Oxide.Plugins
                 int i = 0;
                 while (Physics.OverlapSphere(newpos, 2, constructionMask) != null)
                 {
-                    newpos.x += UnityEngine.Random.Range(-0.2f, 0.2f);
-                    newpos.y = GetGroundY(newpos); //UnityEngine.Random.Range(-0.1f, 0.1f);
-                    newpos.z += UnityEngine.Random.Range(-0.2f, 0.2f);
+                    newpos.x += UnityEngine.Random.Range(-0.1f, 0.1f);
+                    newpos.y = GetGroundY(newpos);
+                    newpos.z += UnityEngine.Random.Range(-0.1f, 0.1f);
 
                     Instance.DoLog($"  trying new position {newpos.ToString()}");
 
@@ -1863,7 +1980,48 @@ namespace Oxide.Plugins
                     npc.SetActive(attackitem.uid);
                 }
 
+                Follow();
                 FiringEffect(attackEntity, firstWeapon as BaseProjectile, npc.info.damageAmount, false); // miss is based on a hitchance calc. false for now
+            }
+
+            public void FindVictim(bool dofollow=false)
+            {
+                if (npc.info.hostile || dofollow)
+                {
+                    List<BasePlayer> victims = new List<BasePlayer>();
+                    Vis.Entities(npc.info.loc, 50f, victims);
+                    foreach (BasePlayer pl in victims)
+                    {
+                        attackEntity = pl as BaseCombatEntity;
+                        npc.info.targetloc = pl.transform.position;
+                        break;
+                    }
+                }
+                if (npc.info.ahostile || dofollow)
+                {
+                    List<BaseAnimalNPC> avictims = new List<BaseAnimalNPC>();
+                    Vis.Entities(npc.info.loc, 50f, avictims);
+                    foreach (BaseAnimalNPC an in avictims)
+                    {
+                        attackEntity = an as BaseCombatEntity;
+                        npc.info.targetloc = an.transform.position;
+                        break;
+                    }
+                }
+            }
+
+            private void Follow()
+            {
+                if (attackEntity == null)
+                {
+                    FindVictim(true);
+                }
+                if (Vector3.Distance(attackEntity.transform.position, npc.transform.position) > followDistance)
+                {
+                    EndPos = (followDistance * Vector3.Normalize(attackEntity.transform.position - npc.transform.position)) + npc.transform.position;
+                    Instance.DoLog($"Moving {npc.info.displayName} to {EndPos.ToString()} to maintain distance of {followDistance.ToString()}m");
+                    SetMovementPoint(EndPos, npc.info.speed);
+                }
             }
 
             private void Defend()
@@ -1892,123 +2050,6 @@ namespace Oxide.Plugins
 
                 defending = true;
                 //DoAttack();
-            }
-
-            private void FiringEffect(BaseCombatEntity target, BaseProjectile weapon, float da, bool miss = false)
-            {
-                ItemModProjectile component = weapon.primaryMagazine.ammoType.GetComponent<ItemModProjectile>();
-                Vector3 source = npc.player.transform.position + npc.player.GetOffset();
-                if (weapon.MuzzlePoint != null)
-                {
-                    source += Quaternion.LookRotation(target.transform.position - npc.player.transform.position) * weapon.MuzzlePoint.position;
-                }
-                Vector3 direction = (target.transform.position + npc.player.GetOffset() - source).normalized;
-                Vector3 vector32 = direction * (component.projectileVelocity * weapon.projectileVelocityScale);
-
-                Vector3 hit;
-                RaycastHit raycastHit;
-                if (Vector3.Distance(npc.player.transform.position, target.transform.position) < 0.5)
-                {
-                    hit = target.transform.position + npc.player.GetOffset(true);
-                }
-                else if (!Physics.SphereCast(source, .01f, vector32, out raycastHit, float.MaxValue, targetLayer))
-                {
-                    Instance.DoLog($"Attack failed: {npc.player.displayName} - {attackEntity.name}");
-                    return;
-                }
-                else
-                {
-                    hit = raycastHit.point;
-                    target = raycastHit.GetCollider().GetComponent<BaseCombatEntity>();
-                    Instance.DoLog($"Attack failed: {raycastHit.GetCollider().name} - {(Layer)raycastHit.GetCollider().gameObject.layer}");
-                    miss = miss || target == null;
-                }
-                weapon.primaryMagazine.contents--;
-                if (miss)
-                {
-                    float aimCone = weapon.GetAimCone();
-                    vector32 += Quaternion.Euler(UnityEngine.Random.Range((float)(-aimCone * 0.5), aimCone * 0.5f), UnityEngine.Random.Range((float)(-aimCone * 0.5), aimCone * 0.5f), UnityEngine.Random.Range((float)(-aimCone * 0.5), aimCone * 0.5f)) * npc.player.eyes.HeadForward();
-                }
-
-                Effect.server.Run(weapon.attackFX.resourcePath, weapon, StringPool.Get(weapon.handBone), Vector3.zero, Vector3.forward);
-                Effect effect = new Effect();
-                effect.Init(Effect.Type.Projectile, source, vector32.normalized);
-                effect.scale = vector32.magnitude;
-                effect.pooledString = component.projectileObject.resourcePath;
-                effect.number = UnityEngine.Random.Range(0, 2147483647);
-                EffectNetwork.Send(effect);
-
-                Vector3 dest;
-                if (miss)
-                {
-                    da = 0;
-                    dest = hit;
-                }
-                else
-                {
-                    dest = target.transform.position;
-                }
-                HitInfo hitInfo = new HitInfo(npc.player, target, DamageType.Bullet, da, dest)
-                {
-                    DidHit = !miss,
-                    HitEntity = target,
-                    PointStart = source,
-                    PointEnd = hit,
-                    HitPositionWorld = dest,
-                    HitNormalWorld = -direction,
-                    WeaponPrefab = GameManager.server.FindPrefab(StringPool.Get(weapon.prefabID)).GetComponent<AttackEntity>(),
-                    Weapon = (AttackEntity)firstWeapon,
-                    HitMaterial = StringPool.Get("Flesh")
-                };
-                target?.OnAttacked(hitInfo);
-                Effect.server.ImpactEffect(hitInfo);
-            }
-
-            private void Execute_Move()
-            {
-                if (!npc.info.canmove) return;
-                if (!npc.info.enable) return;
-
-                if (npc.player.IsWounded()) return;
-
-                currPos = Vector3.Lerp(StartPos, EndPos, waypointDone);
-                //currPos.y = GetMoveY(currPos); // Adjust for terrain height
-
-                if ((npc.info.hostile || npc.info.ahostile) && npc.target != null)
-                {
-                    //defending = true;
-                    Defend();
-                    //DoAttack();
-                }
-                else if (attacked && npc.info.locomode == LocoMode.Defend)
-                {
-                    Defend();
-                    return;
-                }
-                elapsedTime += Time.deltaTime;
-                waypointDone = Mathf.InverseLerp(0f, tripTime, elapsedTime);
-                float dte = FlatDistance(currPos, EndPos);
-
-                if (dte == 0 && waypointDone >= 1)// && dfs > 0)
-                {
-                    FindNextWaypoint();
-                    return;
-                }
-
-                //entity.transform.position = currPos;
-                npc.player.transform.position = currPos;
-                npc.info.loc = currPos;
-                //Instance.DoLog($"Current location: {npc.info.loc}");
-                //Instance.DoLog($"Execute_Move from {StartPos.ToString()} to {EndPos.ToString()} within {tripTime.ToString()}s\n\tcurrent: {npc.player.transform.position.ToString()}, next: {currPos.ToString()}, elapsed: {elapsedTime.ToString()} ");
-
-                npc.LookToward(EndPos);
-                npc.player.MovePosition(currPos);
-                //npc.player.SendNetworkUpdate();
-                Vector3 newEyesPos = currPos + new Vector3(0, 1.6f, 0);
-                npc.player.eyes.position.Set(newEyesPos.x, newEyesPos.y, newEyesPos.z);
-                npc.player.EnablePlayerCollider();
-
-                //npc.player.modelState.onground = !IsSwimming();
             }
 
             public static float FlatDistance(Vector3 pos1, Vector3 pos2)
@@ -2132,7 +2173,7 @@ namespace Oxide.Plugins
 
             public void Gather()
             {
-                Instance.Puts($"Gather() called for {npc.info.displayName}");
+                Instance.DoLog($"Gather() called for {npc.info.displayName}");
                 List<LootContainer> res = new List<LootContainer>();
                 Vis.Entities(npc.info.loc, 100f, res);
                 res = res.OrderBy(x => Vector3.Distance(npc.info.loc, x.transform.position)).ToList();
@@ -2484,32 +2525,6 @@ namespace Oxide.Plugins
                 return position.y;// - .5f;
             }
 
-            public void FindVictim()
-            {
-                if (npc.info.hostile)
-                {
-                    List<BasePlayer> victims = new List<BasePlayer>();
-                    Vis.Entities(npc.info.loc, 50f, victims);
-                    foreach (BasePlayer pl in victims)
-                    {
-                        attackEntity = pl as BaseCombatEntity;
-                        npc.info.targetloc = pl.transform.position;
-                        break;
-                    }
-                }
-                if (npc.info.ahostile)
-                {
-                    List<BaseAnimalNPC> avictims = new List<BaseAnimalNPC>();
-                    Vis.Entities(npc.info.loc, 50f, avictims);
-                    foreach (BaseAnimalNPC an in avictims)
-                    {
-                        attackEntity = an as BaseCombatEntity;
-                        npc.info.targetloc = an.transform.position;
-                        break;
-                    }
-                }
-            }
-
             public bool IsLayerBlocked(Vector3 position, float radius, int mask)
             {
                 List<Collider> colliders = Pool.GetList<Collider>();
@@ -2572,69 +2587,74 @@ namespace Oxide.Plugins
                 return false;
             }
 
-            public void DetermineMove()
+            private void FiringEffect(BaseCombatEntity target, BaseProjectile weapon, float da, bool miss = false)
             {
-                if (!npc.info.canmove) return;
-                if (paused) return;
-                if (npc.player == null) return;
-                //Instance.DoLog($"Determining move based on locomode of {npc.info.locomode.ToString()}");
-
-                switch (npc.info.locomode)
+                ItemModProjectile component = weapon.primaryMagazine.ammoType.GetComponent<ItemModProjectile>();
+                Vector3 source = npc.player.transform.position + npc.player.GetOffset();
+                if (weapon.MuzzlePoint != null)
                 {
-                    case LocoMode.Gather:
-                        npc.info.cansit = false;
-                        npc.info.canride = false;
-                        npc.info.canmove = true;
-                        Gather();
-                        break;
-                    case LocoMode.Sit:
-                        npc.info.cansit = true;
-                        npc.info.canride = false;
-                        npc.info.canmove = true;
-                        Sit();
-                        break;
-                    case LocoMode.Ride:
-                        npc.info.cansit = false;
-                        npc.info.canride = true;
-                        npc.info.canmove = true;
-                        Ride();
-                        break;
-                    case LocoMode.Follow:
-                        npc.info.cansit = false;
-                        npc.info.canride = false;
-                        npc.info.canmove = true;
-                        break;
-                    case LocoMode.Stand:
-                        npc.info.cansit = false;
-                        npc.info.canride = false;
-                        npc.info.canmove = false;
-                        Stand();
-                        break;
-                    case LocoMode.Road:
-                        npc.info.cansit = false;
-                        npc.info.canride = true;
-                        npc.info.canmove = true;
-                        if (!moving)
-                        {
-                            moving = true;
-                            FindRoad();
-                        }
-                        break;
-                    case LocoMode.Monument:
-                        npc.info.cansit = false;
-                        npc.info.canride = false;
-                        npc.info.canmove = true;
-                        break;
-                    case LocoMode.Defend:
-                        npc.info.canmove = true;
-                        npc.info.cansit = false;
-                        break;
-                    default:
-                        npc.info.cansit = false;
-                        npc.info.canride = false;
-                        npc.info.canmove = false;
-                        break;
+                    source += Quaternion.LookRotation(target.transform.position - npc.player.transform.position) * weapon.MuzzlePoint.position;
                 }
+                Vector3 direction = (target.transform.position + npc.player.GetOffset() - source).normalized;
+                Vector3 vector32 = direction * (component.projectileVelocity * weapon.projectileVelocityScale);
+
+                Vector3 hit;
+                RaycastHit raycastHit;
+                if (Vector3.Distance(npc.player.transform.position, target.transform.position) < 0.5)
+                {
+                    hit = target.transform.position + npc.player.GetOffset(true);
+                }
+                else if (!Physics.SphereCast(source, .01f, vector32, out raycastHit, float.MaxValue, targetLayer))
+                {
+                    Instance.DoLog($"Attack failed: {npc.player.displayName} - {attackEntity.name}");
+                    return;
+                }
+                else
+                {
+                    hit = raycastHit.point;
+                    target = raycastHit.GetCollider().GetComponent<BaseCombatEntity>();
+                    Instance.DoLog($"Attack failed: {raycastHit.GetCollider().name} - {(Layer)raycastHit.GetCollider().gameObject.layer}");
+                    miss = miss || target == null;
+                }
+                weapon.primaryMagazine.contents--;
+                if (miss)
+                {
+                    float aimCone = weapon.GetAimCone();
+                    vector32 += Quaternion.Euler(UnityEngine.Random.Range((float)(-aimCone * 0.5), aimCone * 0.5f), UnityEngine.Random.Range((float)(-aimCone * 0.5), aimCone * 0.5f), UnityEngine.Random.Range((float)(-aimCone * 0.5), aimCone * 0.5f)) * npc.player.eyes.HeadForward();
+                }
+
+                Effect.server.Run(weapon.attackFX.resourcePath, weapon, StringPool.Get(weapon.handBone), Vector3.zero, Vector3.forward);
+                Effect effect = new Effect();
+                effect.Init(Effect.Type.Projectile, source, vector32.normalized);
+                effect.scale = vector32.magnitude;
+                effect.pooledString = component.projectileObject.resourcePath;
+                effect.number = UnityEngine.Random.Range(0, 2147483647);
+                EffectNetwork.Send(effect);
+
+                Vector3 dest;
+                if (miss)
+                {
+                    da = 0;
+                    dest = hit;
+                }
+                else
+                {
+                    dest = target.transform.position;
+                }
+                HitInfo hitInfo = new HitInfo(npc.player, target, DamageType.Bullet, da, dest)
+                {
+                    DidHit = !miss,
+                    HitEntity = target,
+                    PointStart = source,
+                    PointEnd = hit,
+                    HitPositionWorld = dest,
+                    HitNormalWorld = -direction,
+                    WeaponPrefab = GameManager.server.FindPrefab(StringPool.Get(weapon.prefabID)).GetComponent<AttackEntity>(),
+                    Weapon = (AttackEntity)firstWeapon,
+                    HitMaterial = StringPool.Get("Flesh")
+                };
+                target?.OnAttacked(hitInfo);
+                Effect.server.ImpactEffect(hitInfo);
             }
         }
 
@@ -2809,7 +2829,7 @@ namespace Oxide.Plugins
                     UnequipAll();
                     weapon.SetHeld(true);
                     info.holdingWeapon = true;
-                    Instance.Puts($"EquipFirstWeapon: Successfully equipped {weapon.name} for NPC {player.displayName}({player.userID.ToString()})");
+                    Instance.DoLog($"EquipFirstWeapon: Successfully equipped {weapon.name} for NPC {player.displayName}({player.userID.ToString()})");
                 }
                 return weapon;
             }
@@ -3259,6 +3279,14 @@ namespace Oxide.Plugins
             Puts("Creating new config file.");
             ConfigData config = new ConfigData
             {
+                Options = new Options()
+                {
+                    defaultName = "Noid",
+                    defaultHealth = 50f,
+                    respawnTimer = 30f,
+                    zeroOnWipe = true,
+                    debug = false
+                },
                 Version = Version
             };
         }
@@ -3284,8 +3312,19 @@ namespace Oxide.Plugins
 
         public class Options
         {
-            public bool debug;
+            [JsonProperty(PropertyName = "Default Name")]
+            public string defaultName;
+
+            [JsonProperty(PropertyName = "Default Health")]
+            public float defaultHealth;
+
+            [JsonProperty(PropertyName = "Default Respawn Timer")]
+            public float respawnTimer;
+
+            [JsonProperty(PropertyName = "Move NPCs to 0,0,0 on server wipe")]
             public bool zeroOnWipe;
+
+            public bool debug;
         }
         #endregion
     }
