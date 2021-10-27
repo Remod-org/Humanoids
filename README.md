@@ -27,3 +27,19 @@ Adds interactive NPCs which can be modded by other plugins.
 ## Permissions
 There are no configurable permissions at this time.
 
+## API
+
+  private bool IsHumanoid(BasePlayer player)
+
+  private ulong SpawnHumanoid(Vector3 position, Quaternion currentRot, string name = "noid", bool ephemeral = false, ulong clone = 0)
+
+  private string GetHumanoidName(ulong npcid)
+
+  private bool RemoveHumanoidById(ulong npcid)
+
+  private bool RemoveHumanoidByName(string name)
+
+  private void SetHumanoidInfo(ulong npcid, string toset, string data, string rot = null)
+
+  private void GiveHumanoid(ulong npcid, string itemname, string loc = "wear", ulong skinid = 0, int count = 1)
+
