@@ -451,7 +451,7 @@ namespace Oxide.Plugins
             BasePlayer player = iplayer.Object as BasePlayer;
             if (args.Length > 0)
             {
-                string debug = string.Join(",", args); DoLog($"{debug}");
+                DoLog(string.Join(",", args));
 
                 switch (args[0])
                 {
@@ -1657,7 +1657,7 @@ namespace Oxide.Plugins
             private HumanoidPlayer npc;
             public List<Vector3> Paths = new List<Vector3>();
             public Vector3 StartPos = new Vector3(0f, 0f, 0f);
-            public Vector3 EndPos = new Vector3(0f, 0f, 0f);
+            public Vector3 followPos = new Vector3(0f, 0f, 0f);
             public Vector3 lastPos = new Vector3(0f, 0f, 0f);
             public Vector3 nextPos = new Vector3(0f, 0f, 0f);
             private Vector3 currPos = new Vector3(0f, 0f, 0f);
@@ -1679,6 +1679,7 @@ namespace Oxide.Plugins
             public List<WaypointInfo> cachedWaypoints;
             private int currentWaypoint = -1;
 
+            private int followTick = 0;
             public float followDistance = 3.5f;
             private readonly float lastHit;
 
@@ -1692,6 +1693,7 @@ namespace Oxide.Plugins
 
             public BaseCombatEntity attackEntity;
             public BaseEntity followEntity;
+            public static Timer followTimer;
             public Vector3 targetPosition = Vector3.zero;
 
             public HeldEntity firstWeapon;
@@ -1710,7 +1712,7 @@ namespace Oxide.Plugins
                 InvokeRepeating("DoAttack", 0f, 0.5f);
             }
 
-            public void Update()
+            public void FixedUpdate()
             {
                 if (npc.player == null) return;
                 if (attacked && npc.info.defend && npc.info.locomode != LocoMode.Defend)
@@ -1760,7 +1762,8 @@ namespace Oxide.Plugins
                         npc.info.cansit = false;
                         npc.info.canride = false;
                         npc.info.canmove = true;
-                        Follow();
+                        following = true;
+                        //Follow();
                         break;
                     case LocoMode.Stand:
                         npc.info.cansit = false;
@@ -1802,6 +1805,7 @@ namespace Oxide.Plugins
                     startmoving = false;
                     //FindNextWaypoint();
                 }
+
                 Execute_Move();
                 //if (waypointDone >= 1f) elapsedTime = 0f;
             }
@@ -1813,7 +1817,7 @@ namespace Oxide.Plugins
 
                 if (npc.player.IsWounded()) return;
 
-                currPos = Vector3.Lerp(StartPos, EndPos, waypointDone);
+                currPos = Vector3.Lerp(StartPos, followPos, waypointDone);
                 //currPos.y = GetMoveY(currPos); // Adjust for terrain height
 
                 if ((npc.info.hostile || npc.info.ahostile) && npc.target != null)
@@ -1829,9 +1833,13 @@ namespace Oxide.Plugins
                 }
                 elapsedTime += Time.deltaTime;
                 waypointDone = Mathf.InverseLerp(0f, tripTime, elapsedTime);
-                float dte = FlatDistance(currPos, EndPos);
+                float dte = FlatDistance(currPos, followPos);
 
-                if (dte == 0 && waypointDone >= 1)// && dfs > 0)
+                if (following)
+                {
+                    Follow();
+                }
+                else if (dte == 0 && waypointDone >= 1)// && dfs > 0)
                 {
                     FindNextWaypoint();
                     return;
@@ -1843,7 +1851,7 @@ namespace Oxide.Plugins
                 //Instance.DoLog($"Current location: {npc.info.loc}");
                 //Instance.DoLog($"Execute_Move from {StartPos.ToString()} to {EndPos.ToString()} within {tripTime.ToString()}s\n\tcurrent: {npc.player.transform.position.ToString()}, next: {currPos.ToString()}, elapsed: {elapsedTime.ToString()} ");
 
-                npc.LookToward(EndPos);
+                npc.LookToward(followPos);
                 npc.player.MovePosition(currPos);
                 //npc.player.SendNetworkUpdate();
                 Vector3 newEyesPos = currPos + new Vector3(0, 1.6f, 0);
@@ -1864,6 +1872,7 @@ namespace Oxide.Plugins
 //                    currentWaypoint++;
 //                }
                 currentWaypoint++;
+                if (following) currentWaypoint = 0;
                 Instance.DoLog($"FindNextWaypoint({currentWaypoint.ToString()}), Paths.Count == {Paths.Count.ToString()}, time: {wpupdatetime}");
                 //if (npc.info.canride)
                 //{
@@ -1905,15 +1914,15 @@ namespace Oxide.Plugins
                 StartPos = npc.info.loc;
                 if (endpos != StartPos)
                 {
-                    EndPos = endpos;
-                    tripTime = Vector3.Distance(EndPos, StartPos)/s;
+                    followPos = endpos;
+                    tripTime = Vector3.Distance(followPos, StartPos)/s;
                     //npc.info.rot = Quaternion.LookRotation(EndPos - StartPos);
                     //if (npc.player != null) SetViewAngle(npc.player, npc.info.rot);
                     elapsedTime = 0f;
                     waypointDone = 0f;
                 }
                 //Paths.RemoveAt(0);
-                float d = Vector3.Distance(EndPos, StartPos);
+                float d = Vector3.Distance(followPos, StartPos);
                 float ts = Time.realtimeSinceStartup;
 //                Instance.DoLog($"SetMovementPoint({currentWaypoint.ToString()}) Start: {StartPos.ToString()}, current {npc.info.loc.ToString()}, End: {endpos.ToString()}), time: {ts}");
             }
@@ -2012,15 +2021,22 @@ namespace Oxide.Plugins
 
             private void Follow()
             {
+                followTick++;
                 if (attackEntity == null)
                 {
+                    Instance.DoLog("Null attackEntity for Follow()");
                     FindVictim(true);
                 }
-                if (Vector3.Distance(attackEntity.transform.position, npc.transform.position) > followDistance)
+                if (Vector3.Distance(attackEntity.transform.position, npc.transform.position) >= followDistance)
                 {
-                    EndPos = (followDistance * Vector3.Normalize(attackEntity.transform.position - npc.transform.position)) + npc.transform.position;
-                    Instance.DoLog($"Moving {npc.info.displayName} to {EndPos.ToString()} to maintain distance of {followDistance.ToString()}m");
-                    SetMovementPoint(EndPos, npc.info.speed);
+                    if (followTick > 20)
+                    {
+                        followTick = 0;
+                        Vector3 _followPos = (followDistance * Vector3.Normalize(attackEntity.transform.position - npc.transform.position)) + npc.transform.position;
+                        Instance.DoLog($"Moving {npc.info.displayName} to {_followPos.ToString()} to maintain distance of {followDistance.ToString()}m");
+                        SetMovementPoint(_followPos, npc.info.speed);
+                    }
+                    //npc.player.MovePosition(EndPos);
                 }
             }
 
@@ -2167,7 +2183,7 @@ namespace Oxide.Plugins
                 LootBox(re);
                 npc.info.canmove = true;
                 moving = true;
-                EndPos = npc.transform.position;
+                followPos = npc.transform.position;
                 currentWaypoint = 0;
             }
 
@@ -2195,8 +2211,8 @@ namespace Oxide.Plugins
                         moving = true;
                         npc.info.canmove = true;
                         StartPos = npc.transform.position;
-                        EndPos = re.transform.position;
-                        tripTime = Vector3.Distance(StartPos, EndPos) * 2 / GetSpeed(npc.info.speed);
+                        followPos = re.transform.position;
+                        tripTime = Vector3.Distance(StartPos, followPos) * 2 / GetSpeed(npc.info.speed);
                         npc.info.enable = true;
                     }
                     break;
@@ -2363,32 +2379,32 @@ namespace Oxide.Plugins
                 horse.RiderInput(new InputState() { current = message }, npc.player);
             }
 
-            public void UpdateWaypoints()
-            {
-                if (string.IsNullOrEmpty(npc.info.waypoint)) return;
-                object cwaypoints = Interface.Oxide.CallHook("GetWaypointsList", npc.info.waypoint);
-                if (cwaypoints == null)
-                {
-                    cachedWaypoints = null;
-                }
-                else
-                {
-                    cachedWaypoints = new List<WaypointInfo>();
-                    Vector3 lastPos = npc.info.loc;
-                    float speed = GetSpeed();
-                    foreach (object cwaypoint in (List<object>)cwaypoints)
-                    {
-                        foreach (KeyValuePair<Vector3, float> pair in (Dictionary<Vector3, float>)cwaypoint)
-                        {
-                            cachedWaypoints.Add(new WaypointInfo(pair.Key, pair.Value));
-                        }
-                    }
+            //public void UpdateWaypoints()
+            //{
+            //    if (string.IsNullOrEmpty(npc.info.waypoint)) return;
+            //    object cwaypoints = Interface.Oxide.CallHook("GetWaypointsList", npc.info.waypoint);
+            //    if (cwaypoints == null)
+            //    {
+            //        cachedWaypoints = null;
+            //    }
+            //    else
+            //    {
+            //        cachedWaypoints = new List<WaypointInfo>();
+            //        Vector3 lastPos = npc.info.loc;
+            //        float speed = GetSpeed();
+            //        foreach (object cwaypoint in (List<object>)cwaypoints)
+            //        {
+            //            foreach (KeyValuePair<Vector3, float> pair in (Dictionary<Vector3, float>)cwaypoint)
+            //            {
+            //                cachedWaypoints.Add(new WaypointInfo(pair.Key, pair.Value));
+            //            }
+            //        }
 
-                    if (cachedWaypoints.Count == 0) cachedWaypoints = null;
+            //        if (cachedWaypoints.Count == 0) cachedWaypoints = null;
 
-                    Instance.DoLog($"[HumanoidMovement] Waypoints: {cachedWaypoints.Count.ToString()} {npc.player.displayName}");
-                }
-            }
+            //        Instance.DoLog($"[HumanoidMovement] Waypoints: {cachedWaypoints.Count.ToString()} {npc.player.displayName}");
+            //    }
+            //}
 
             public List<Item> GetAmmo(Item item)
             {
@@ -2490,8 +2506,8 @@ namespace Oxide.Plugins
                 // Setup road points as waypoints
                 Paths = roads[roadname].points;
                 StartPos = Paths[0];
-                EndPos = Paths[1];
-                tripTime = Vector3.Distance(StartPos, EndPos) / GetSpeed(npc.info.speed);
+                followPos = Paths[1];
+                tripTime = Vector3.Distance(StartPos, followPos) / GetSpeed(npc.info.speed);
                 npc.info.enable = true;
             }
 
