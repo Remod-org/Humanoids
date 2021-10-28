@@ -81,7 +81,7 @@ namespace Oxide.Plugins
         private readonly static int playerMask = LayerMask.GetMask("Player (Server)");
         private readonly static int groundLayer = LayerMask.GetMask("Construction", "Terrain", "World");
         private readonly static int obstructionMask = LayerMask.GetMask(new[] { "Construction", "Deployed", "Clutter" });
-        private readonly static int constructionMask = LayerMask.GetMask(new[] { "Construction", "Deployed", "Clutter" });
+        private readonly static int constructionMask = LayerMask.GetMask(new[] { "Construction", "Deployed" });
         private readonly static int terrainMask = LayerMask.GetMask(new[] { "Terrain", "Tree" });
         private static int targetLayer;
         #endregion
@@ -1669,6 +1669,7 @@ namespace Oxide.Plugins
             public bool attacked;
             public bool defending;
             public bool following;
+            public bool gathering;
             public bool moving;
             public bool sitting;
             public bool riding;
@@ -1679,8 +1680,9 @@ namespace Oxide.Plugins
             public List<WaypointInfo> cachedWaypoints;
             private int currentWaypoint = -1;
 
-            private int followTick = 0;
-            public float followDistance = 3.5f;
+            private int followTick;
+            private int gatherTick;
+            public float followDistance = 5f;
             private readonly float lastHit;
 
             public int noPath;
@@ -1744,7 +1746,7 @@ namespace Oxide.Plugins
                         npc.info.cansit = false;
                         npc.info.canride = false;
                         npc.info.canmove = true;
-                        Gather();
+                        gathering = true;
                         break;
                     case LocoMode.Sit:
                         npc.info.cansit = true;
@@ -1763,7 +1765,6 @@ namespace Oxide.Plugins
                         npc.info.canride = false;
                         npc.info.canmove = true;
                         following = true;
-                        //Follow();
                         break;
                     case LocoMode.Stand:
                         npc.info.cansit = false;
@@ -1803,11 +1804,9 @@ namespace Oxide.Plugins
                 if (elapsedTime == 0f && startmoving)
                 {
                     startmoving = false;
-                    //FindNextWaypoint();
                 }
 
                 Execute_Move();
-                //if (waypointDone >= 1f) elapsedTime = 0f;
             }
 
             private void Execute_Move()
@@ -1818,13 +1817,11 @@ namespace Oxide.Plugins
                 if (npc.player.IsWounded()) return;
 
                 currPos = Vector3.Lerp(StartPos, followPos, waypointDone);
-                //currPos.y = GetMoveY(currPos); // Adjust for terrain height
+                currPos.y = GetGroundY(currPos);
 
                 if ((npc.info.hostile || npc.info.ahostile) && npc.target != null)
                 {
-                    //defending = true;
                     Defend();
-                    //DoAttack();
                 }
                 else if (attacked && npc.info.locomode == LocoMode.Defend)
                 {
@@ -1834,6 +1831,11 @@ namespace Oxide.Plugins
                 elapsedTime += Time.deltaTime;
                 waypointDone = Mathf.InverseLerp(0f, tripTime, elapsedTime);
                 float dte = FlatDistance(currPos, followPos);
+
+                if (gathering)
+                {
+                    Gather();
+                }
 
                 if (following)
                 {
@@ -1845,20 +1847,14 @@ namespace Oxide.Plugins
                     return;
                 }
 
-                //entity.transform.position = currPos;
                 npc.player.transform.position = currPos;
                 npc.info.loc = currPos;
-                //Instance.DoLog($"Current location: {npc.info.loc}");
-                //Instance.DoLog($"Execute_Move from {StartPos.ToString()} to {EndPos.ToString()} within {tripTime.ToString()}s\n\tcurrent: {npc.player.transform.position.ToString()}, next: {currPos.ToString()}, elapsed: {elapsedTime.ToString()} ");
 
-                npc.LookToward(followPos);
+                if (npc.info.locomode != LocoMode.Follow) npc.LookToward(followPos);
                 npc.player.MovePosition(currPos);
-                //npc.player.SendNetworkUpdate();
                 Vector3 newEyesPos = currPos + new Vector3(0, 1.6f, 0);
                 npc.player.eyes.position.Set(newEyesPos.x, newEyesPos.y, newEyesPos.z);
                 npc.player.EnablePlayerCollider();
-
-                //npc.player.modelState.onground = !IsSwimming();
             }
 
             private void FindNextWaypoint()
@@ -1866,13 +1862,9 @@ namespace Oxide.Plugins
                 if (paused) return;
                 if (Time.realtimeSinceStartup - wpupdatetime < 1 / npc.info.speed) return;
                 wpupdatetime = Time.realtimeSinceStartup;
-//                if (currentWaypoint == -1 && npc.info.locomode == LocoMode.Road)
-//                {
-//                    Instance.DoLog("ROADWALKER BUMP");
-//                    currentWaypoint++;
-//                }
+
                 currentWaypoint++;
-                if (following) currentWaypoint = 0;
+                if (following || gathering) currentWaypoint = 0;
                 Instance.DoLog($"FindNextWaypoint({currentWaypoint.ToString()}), Paths.Count == {Paths.Count.ToString()}, time: {wpupdatetime}");
                 //if (npc.info.canride)
                 //{
@@ -1942,7 +1934,7 @@ namespace Oxide.Plugins
 
                 RaycastHit hitinfo;
                 int i = 0;
-                while (Physics.OverlapSphere(newpos, 2, constructionMask) != null)
+                while (Physics.OverlapSphere(newpos, 2, obstructionMask) != null)
                 {
                     newpos.x += UnityEngine.Random.Range(-0.1f, 0.1f);
                     newpos.y = GetGroundY(newpos);
@@ -2001,6 +1993,7 @@ namespace Oxide.Plugins
                     Vis.Entities(npc.info.loc, 50f, victims);
                     foreach (BasePlayer pl in victims)
                     {
+                        if (pl == npc.player) continue;
                         attackEntity = pl as BaseCombatEntity;
                         npc.info.targetloc = pl.transform.position;
                         break;
@@ -2021,22 +2014,27 @@ namespace Oxide.Plugins
 
             private void Follow()
             {
+                // Slows reaction time down enough so we don't think too hard and get stuck updating destination when trying to follow things.
                 followTick++;
-                if (attackEntity == null)
+                if (attackEntity?.IsDestroyed != false)
                 {
                     Instance.DoLog("Null attackEntity for Follow()");
                     FindVictim(true);
                 }
-                if (Vector3.Distance(attackEntity.transform.position, npc.transform.position) >= followDistance)
+
+                npc.LookToward(attackEntity.transform.position);
+                if (FlatDistance(attackEntity.transform.position, npc.transform.position) >= followDistance && followTick > 10)
                 {
-                    if (followTick > 20)
+                    followTick = 0;
+                    float _speed = npc.info.speed;
+                    if (Vector3.Distance(attackEntity.transform.position, npc.transform.position) >= followDistance * 3)
                     {
-                        followTick = 0;
-                        Vector3 _followPos = (followDistance * Vector3.Normalize(attackEntity.transform.position - npc.transform.position)) + npc.transform.position;
-                        Instance.DoLog($"Moving {npc.info.displayName} to {_followPos.ToString()} to maintain distance of {followDistance.ToString()}m");
-                        SetMovementPoint(_followPos, npc.info.speed);
+                        _speed += 2;
                     }
-                    //npc.player.MovePosition(EndPos);
+                    Vector3 _followPos = (followDistance * Vector3.Normalize(attackEntity.transform.position - npc.transform.position)) + npc.transform.position;
+                    _followPos.y = GetMoveY(_followPos);
+                    Instance.DoLog($"Moving {npc.info.displayName} to {_followPos.ToString()} to maintain distance of {followDistance.ToString()}m");
+                    SetMovementPoint(_followPos, _speed);
                 }
             }
 
@@ -2187,7 +2185,7 @@ namespace Oxide.Plugins
                 currentWaypoint = 0;
             }
 
-            public void Gather()
+            public void OldGather()
             {
                 Instance.DoLog($"Gather() called for {npc.info.displayName}");
                 List<LootContainer> res = new List<LootContainer>();
@@ -2206,6 +2204,7 @@ namespace Oxide.Plugins
                     {
                         Instance.DoLog($"Found resource {re.ShortPrefabName} to gather");
                         npc.EquipFirstTool();
+                        //SetMovementPoint(re, _speed);
                         npc.LookToward(re.transform.position);
                         npc.info.targetloc = re.transform.position;
                         moving = true;
@@ -2221,6 +2220,41 @@ namespace Oxide.Plugins
                 //List<ResourceEntity> res = new List<ResourceEntity>();
                 //Vis.Entities(npc.info.loc, 20f, res);
                 //foreach (ResourceEntity re in res.Distinct().ToList())
+            }
+
+            public void Gather()
+            {
+                gatherTick++;
+                Instance.DoLog($"Gather() called for {npc.info.displayName}");
+                if (attackEntity?.IsDestroyed != false)
+                {
+                    List<LootContainer> res = new List<LootContainer>();
+                    Vis.Entities(npc.info.loc, 200f, res);
+                    res = res.OrderBy(x => Vector3.Distance(npc.info.loc, x.transform.position)).ToList();
+
+                    foreach (LootContainer re in res.Distinct().ToList())
+                    {
+                        attackEntity = re;
+                        break;
+                    }
+                }
+
+                npc.LookToward(attackEntity.transform.position);
+                if (FlatDistance(npc.info.loc, attackEntity.transform.position) <= 1f)
+                {
+                    DoGather(attackEntity as LootContainer);
+                    return;
+                }
+
+                if (Vector3.Distance(attackEntity.transform.position, npc.transform.position) > 1f && gatherTick > 5)
+                {
+                    gatherTick = 0;
+
+                    Vector3 _gatherPos = (Vector3.Normalize(attackEntity.transform.position - npc.transform.position)) + npc.transform.position;
+                    _gatherPos.y = GetMoveY(_gatherPos);
+                    Instance.DoLog($"Moving {npc.info.displayName} to {_gatherPos.ToString()} to gather {attackEntity.ShortPrefabName}");
+                    SetMovementPoint(_gatherPos, npc.info.speed);
+                }
             }
 
             public void HandlePause(bool kill = false)
@@ -2525,6 +2559,12 @@ namespace Oxide.Plugins
                     return point - 0.65f;
                 }
 
+                RaycastHit hitinfo;
+                if (Physics.Raycast(position + new Vector3(0, 6, 0), Vector3.down, out hitinfo, 20f, constructionMask))
+                {
+                    return hitinfo.point.y;
+                }
+
                 return TerrainMeta.HeightMap.GetHeight(position);
                 //return GetGroundY(position);
             }
@@ -2533,7 +2573,7 @@ namespace Oxide.Plugins
             {
                 //position = position + Vector3.up;
                 RaycastHit hitinfo;
-                if (Physics.Raycast(position, Vector3Down, out hitinfo, 100f, groundLayer))
+                if (Physics.Raycast(position + new Vector3(0, 6, 0), Vector3.down, out hitinfo, 20f, groundLayer))
                 {
                     return hitinfo.point.y;
                 }
