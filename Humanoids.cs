@@ -315,6 +315,22 @@ namespace Oxide.Plugins
         private void OnEntityDeath(BaseCombatEntity entity, HitInfo hitinfo)
         {
             var hp = entity.GetComponent<HumanoidPlayer>();
+            if (hp?.info.lootable != false)
+            {
+                hp.player.inventory?.Strip();
+            }
+            else if (hp?.info.dropWeapon != true)
+            {
+                hp.movement.firstWeapon?.Kill();
+            }
+            else
+            {
+                BaseProjectile weapon = hp.movement.firstWeapon as BaseProjectile;
+                if (weapon != null)
+                {
+                    weapon.primaryMagazine.contents = 0;
+                }
+            }
             if (hp?.info.respawn == true)
             {
                 timer.Once(hp.info.respawnTimer, () => RespawnNPC(hp.info.userid));
@@ -879,6 +895,9 @@ namespace Oxide.Plugins
                 case "needsAmmo":
                     hp.info.needsammo = !GetBoolValue(data);
                     break;
+                case "dropWeapon":
+                    hp.info.dropWeapon = !GetBoolValue(data);
+                    break;
                 case "respawn":
                     hp.info.respawn= !GetBoolValue(data);
                     break;
@@ -1076,6 +1095,7 @@ namespace Oxide.Plugins
                     { "cansit",  npcs[npc].cansit.ToString() },
                     { "canride",  npcs[npc].canride.ToString() },
                     { "needsAmmo",  npcs[npc].needsammo.ToString() },
+                    { "dropWeapon",  npcs[npc].dropWeapon.ToString() },
                     { "respawn",  npcs[npc].respawn.ToString() },
                     { "respawnTimer",  npcs[npc].respawnTimer.ToString() },
                     { "entrypause",  npcs[npc].entrypause.ToString() },
@@ -1597,6 +1617,7 @@ namespace Oxide.Plugins
             public bool evade;
             public bool follow;
             public bool needsammo;
+            public bool dropWeapon;
             public bool invulnerable;
             public bool lootable;
             public bool entrypause;
@@ -1655,6 +1676,7 @@ namespace Oxide.Plugins
         public class HumanoidMovement : MonoBehaviour
         {
             private HumanoidPlayer npc;
+            private Humanoid_SPF spf;
             public List<Vector3> Paths = new List<Vector3>();
             public Vector3 StartPos = new Vector3(0f, 0f, 0f);
             public Vector3 followPos = new Vector3(0f, 0f, 0f);
@@ -1695,7 +1717,7 @@ namespace Oxide.Plugins
 
             public BaseCombatEntity attackEntity;
             public BaseEntity followEntity;
-            public static Timer followTimer;
+            //public Timer followTimer;
             public Vector3 targetPosition = Vector3.zero;
 
             public HeldEntity firstWeapon;
@@ -1710,6 +1732,7 @@ namespace Oxide.Plugins
                 StartPos = npc.info.loc;
                 npc.player.transform.rotation = npc.info.rot;
                 npc.player.modelState.onground = true;
+                spf = new Humanoid_SPF();
 
                 InvokeRepeating("DoAttack", 0f, 0.5f);
             }
@@ -1728,7 +1751,7 @@ namespace Oxide.Plugins
                 else
                 {
                     DetermineMove(); // based on locomode
-                    FindVictim();
+                    FindTarget();
                     Move();
                 }
             }
@@ -1907,6 +1930,7 @@ namespace Oxide.Plugins
                 if (endpos != StartPos)
                 {
                     followPos = endpos;
+                    //followPos = spf.Get_SPF(StartPos, endpos);
                     tripTime = Vector3.Distance(followPos, StartPos)/s;
                     //npc.info.rot = Quaternion.LookRotation(EndPos - StartPos);
                     //if (npc.player != null) SetViewAngle(npc.player, npc.info.rot);
@@ -1985,29 +2009,31 @@ namespace Oxide.Plugins
                 FiringEffect(attackEntity, firstWeapon as BaseProjectile, npc.info.damageAmount, false); // miss is based on a hitchance calc. false for now
             }
 
-            public void FindVictim(bool dofollow=false)
+            public void FindTarget(bool dofollow=false)
             {
                 if (npc.info.hostile || dofollow)
                 {
                     List<BasePlayer> victims = new List<BasePlayer>();
-                    Vis.Entities(npc.info.loc, 50f, victims);
+                    Vis.Entities(npc.info.loc, 200f, victims);
                     foreach (BasePlayer pl in victims)
                     {
                         if (pl == npc.player) continue;
                         attackEntity = pl as BaseCombatEntity;
                         npc.info.targetloc = pl.transform.position;
-                        break;
+                        Instance.timer.Once(npc.info.followTime, () => attackEntity = null);
+                        return;
                     }
                 }
                 if (npc.info.ahostile || dofollow)
                 {
                     List<BaseAnimalNPC> avictims = new List<BaseAnimalNPC>();
-                    Vis.Entities(npc.info.loc, 50f, avictims);
+                    Vis.Entities(npc.info.loc, 200f, avictims);
                     foreach (BaseAnimalNPC an in avictims)
                     {
                         attackEntity = an as BaseCombatEntity;
                         npc.info.targetloc = an.transform.position;
-                        break;
+                        Instance.timer.Once(npc.info.followTime, () => attackEntity = null);
+                        return;
                     }
                 }
             }
@@ -2019,8 +2045,10 @@ namespace Oxide.Plugins
                 if (attackEntity?.IsDestroyed != false)
                 {
                     Instance.DoLog("Null attackEntity for Follow()");
-                    FindVictim(true);
+                    //Instance.timer.Every(npc.info.followTime, () => FindTarget(true));
+                    FindTarget(true);
                 }
+                if (attackEntity == null) return;
 
                 npc.LookToward(attackEntity.transform.position);
                 if (FlatDistance(attackEntity.transform.position, npc.transform.position) >= followDistance && followTick > 10)
@@ -2033,7 +2061,7 @@ namespace Oxide.Plugins
                     }
                     Vector3 _followPos = (followDistance * Vector3.Normalize(attackEntity.transform.position - npc.transform.position)) + npc.transform.position;
                     _followPos.y = GetMoveY(_followPos);
-                    Instance.DoLog($"Moving {npc.info.displayName} to {_followPos.ToString()} to maintain distance of {followDistance.ToString()}m");
+                    Instance.DoLog($"Moving {npc.info.displayName} to {_followPos.ToString()} to maintain distance of {followDistance.ToString()}m from {attackEntity.ShortPrefabName}");
                     SetMovementPoint(_followPos, _speed);
                 }
             }
@@ -2177,7 +2205,9 @@ namespace Oxide.Plugins
                 npc.info.canmove = false;
                 moving = false;
                 Instance.DoLog($"Gathering {re.ShortPrefabName} ({re.net.ID.ToString()})");
+                //npc.EquipFirstTool();
                 npc.player.serverInput.current = new InputMessage() { buttons = 256 };
+                npc.player.SendNetworkUpdateImmediate();
                 LootBox(re);
                 npc.info.canmove = true;
                 moving = true;
@@ -2185,75 +2215,48 @@ namespace Oxide.Plugins
                 currentWaypoint = 0;
             }
 
-            public void OldGather()
+            public void FindLoot()
             {
-                Instance.DoLog($"Gather() called for {npc.info.displayName}");
                 List<LootContainer> res = new List<LootContainer>();
-                Vis.Entities(npc.info.loc, 100f, res);
+                Vis.Entities(npc.info.loc, 200f, res);
                 res = res.OrderBy(x => Vector3.Distance(npc.info.loc, x.transform.position)).ToList();
 
                 foreach (LootContainer re in res.Distinct().ToList())
                 {
-                    Instance.DoLog($"Checking resource {re.ShortPrefabName}");
-                    if (Vector3.Distance(npc.info.loc, re.transform.position) < 1f)
-                    {
-                        DoGather(re);
-                        return;
-                    }
-                    if (!IsLayerBlocked(npc.info.loc, 2f, obstructionMask))
-                    {
-                        Instance.DoLog($"Found resource {re.ShortPrefabName} to gather");
-                        npc.EquipFirstTool();
-                        //SetMovementPoint(re, _speed);
-                        npc.LookToward(re.transform.position);
-                        npc.info.targetloc = re.transform.position;
-                        moving = true;
-                        npc.info.canmove = true;
-                        StartPos = npc.transform.position;
-                        followPos = re.transform.position;
-                        tripTime = Vector3.Distance(StartPos, followPos) * 2 / GetSpeed(npc.info.speed);
-                        npc.info.enable = true;
-                    }
-                    break;
+                    if ((re.transform.position.y - 5) > GetGroundY(npc.transform.position)) continue;
+                    // FIXME - needs to give up at some point
+                    attackEntity = re;
+                    Instance.timer.Once(npc.info.followTime, () => attackEntity = null);
+                    return;
+                    //break;
                 }
-
-                //List<ResourceEntity> res = new List<ResourceEntity>();
-                //Vis.Entities(npc.info.loc, 20f, res);
-                //foreach (ResourceEntity re in res.Distinct().ToList())
             }
 
             public void Gather()
             {
                 gatherTick++;
-                Instance.DoLog($"Gather() called for {npc.info.displayName}");
+                //Instance.DoLog($"Gather() called for {npc.info.displayName}");
                 if (attackEntity?.IsDestroyed != false)
                 {
-                    List<LootContainer> res = new List<LootContainer>();
-                    Vis.Entities(npc.info.loc, 200f, res);
-                    res = res.OrderBy(x => Vector3.Distance(npc.info.loc, x.transform.position)).ToList();
-
-                    foreach (LootContainer re in res.Distinct().ToList())
-                    {
-                        attackEntity = re;
-                        break;
-                    }
+                    //Instance.timer.Every(npc.info.followTime, FindLoot);
+                    FindLoot();
                 }
+                if (attackEntity == null) return;
 
                 npc.LookToward(attackEntity.transform.position);
-                if (FlatDistance(npc.info.loc, attackEntity.transform.position) <= 1f)
-                {
-                    DoGather(attackEntity as LootContainer);
-                    return;
-                }
 
                 if (Vector3.Distance(attackEntity.transform.position, npc.transform.position) > 1f && gatherTick > 5)
                 {
                     gatherTick = 0;
-
                     Vector3 _gatherPos = (Vector3.Normalize(attackEntity.transform.position - npc.transform.position)) + npc.transform.position;
                     _gatherPos.y = GetMoveY(_gatherPos);
                     Instance.DoLog($"Moving {npc.info.displayName} to {_gatherPos.ToString()} to gather {attackEntity.ShortPrefabName}");
                     SetMovementPoint(_gatherPos, npc.info.speed);
+                }
+                else if (FlatDistance(npc.info.loc, attackEntity.transform.position) <= 1f)
+                {
+                    gatherTick = 0;
+                    DoGather(attackEntity as LootContainer);
                 }
             }
 
@@ -2944,6 +2947,75 @@ namespace Oxide.Plugins
             public override bool CanConvert(Type objectType)
             {
                 return objectType == typeof(Quaternion);
+            }
+        }
+
+        /// <summary>
+        /// Find obstruction-free path to target
+        /// </summary>
+        private class Humanoid_SPF
+        {
+            public Vector3 originalTarget;
+            public bool foundSPF;
+            public int tickCount;
+
+            public bool Check_SPF(Vector3 source)
+            {
+                if (originalTarget == Vector3.zero) return false;
+
+                return Vector2.Distance(source, originalTarget) < 1f;
+            }
+
+            public Vector3 Get_SPF(Vector3 source, Vector3 target)
+            {
+                tickCount++;
+                if (tickCount < 3)
+                {
+                    Instance.DoLog($"Get_SPF tickCount is {tickCount.ToString()}");
+                    return originalTarget;
+                }
+                tickCount = 0;
+                if (foundSPF)
+                {
+                    Instance.DoLog("Get_SPF returning originalTarget");
+                    return originalTarget;
+                }
+
+                originalTarget = target;
+                foundSPF = false;
+
+                Vector2 lookLeft = Vector2.Perpendicular((source - target).normalized);
+                Vector2 lookRight = Vector2.Perpendicular(-(source - target).normalized);
+                Vector3 testPoint = source;
+
+                for (int i = 1; i < 101; i++)
+                {
+                    Vector3 lLeft = lookLeft;
+                    testPoint = source + (lLeft * i * 2);
+                    testPoint.y = source.y;
+
+                    //if (Physics.Linecast(testPoint, target, obstructionMask))
+                    if (Physics.Raycast(testPoint, target, obstructionMask))
+                    {
+                        Instance.DoLog($"Get_SPF returning new intermediate target L at {testPoint.ToString()}");
+                        foundSPF = true;
+                        return testPoint;
+                    }
+                    else
+                    {
+                        Vector3 lRight = lookRight;
+                        testPoint = source + (lRight * i * 2);
+                        testPoint.y = source.y;
+                        if (Physics.Raycast(testPoint, target, obstructionMask))
+                        {
+                            Instance.DoLog($"Get_SPF returning new intermediate target R at {testPoint.ToString()}");
+                            foundSPF = true;
+                            return testPoint;
+                        }
+                    }
+                }
+
+                return testPoint;
             }
         }
 
