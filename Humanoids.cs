@@ -314,12 +314,14 @@ namespace Oxide.Plugins
 
         private void OnEntityDeath(BaseCombatEntity entity, HitInfo hitinfo)
         {
+            if (entity == null) return;
             var hp = entity.GetComponent<HumanoidPlayer>();
-            if (hp?.info.lootable != false)
+            if (hp == null) return;
+            if (!hp.info.lootable)
             {
                 hp.player.inventory?.Strip();
             }
-            else if (hp?.info.dropWeapon != true)
+            else if (!hp.info.dropWeapon)
             {
                 hp.movement.firstWeapon?.Kill();
             }
@@ -555,6 +557,7 @@ namespace Oxide.Plugins
                         {
                             if (args.Length > 1)
                             {
+                                CuiHelper.DestroyUi(player, NPCGUI);
                                 ulong npcid = ulong.Parse(args[1]);
                                 foreach (KeyValuePair<ulong, HumanoidInfo> pls in npcs)
                                 {
@@ -569,6 +572,7 @@ namespace Oxide.Plugins
                                         break;
                                     }
                                 }
+                                if (isopen.Contains(player.userID)) NPCSelectGUI(player);
                             }
                             else
                             {
@@ -1431,19 +1435,21 @@ namespace Oxide.Plugins
 
         private void RemoveNPC(HumanoidInfo info)
         {
+            HumanoidPlayer npc = FindHumanoidByID(info.userid);
+            if (npc?.player != null && !npc.player.IsDestroyed)
+            {
+                npc.player.KillMessage();
+            }
+            hpcacheid.Remove(info.userid);
+            hpcachenm.Remove(info.displayName);
+
             if (npcs.ContainsKey(info.userid))
             {
                 //storedData.Humanoids.Remove(npcs[info.userid]);
                 //npcs[info.userid] = null;
                 npcs.Remove(info.userid);
             }
-            hpcacheid.Remove(info.userid);
-            hpcachenm.Remove(info.displayName);
-            HumanoidPlayer npc = FindHumanoidByID(info.userid);
-            if (npc?.player != null && !npc.player.IsDestroyed)
-            {
-                npc.player.KillMessage();
-            }
+
             SaveData();
         }
 
