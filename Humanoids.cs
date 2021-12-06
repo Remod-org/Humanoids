@@ -33,13 +33,12 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
-using System.Runtime.InteropServices;
 using System.Text.RegularExpressions;
 using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("Humanoids", "RFC1920", "1.2.1")]
+    [Info("Humanoids", "RFC1920", "1.2.2")]
     [Description("Adds interactive NPCs which can be modded by other plugins")]
     internal class Humanoids : RustPlugin
     {
@@ -81,7 +80,7 @@ namespace Oxide.Plugins
         private readonly static int playerMask = LayerMask.GetMask("Player (Server)");
         private readonly static int groundLayer = LayerMask.GetMask("Construction", "Terrain", "World");
         private readonly static int obstructionMask = LayerMask.GetMask(new[] { "Construction", "Deployed", "Clutter" });
-        private readonly static int gatherMask = LayerMask.GetMask(new[] { "Construction", "Deployed", "Clutter", "World" });
+        private readonly static int gatherMask = LayerMask.GetMask(new[] { "Construction", "Deployed", "World" });
         private readonly static int constructionMask = LayerMask.GetMask(new[] { "Construction", "Deployed" });
         private readonly static int terrainMask = LayerMask.GetMask(new[] { "Terrain", "Tree" });
         private static int targetLayer;
@@ -113,6 +112,7 @@ namespace Oxide.Plugins
                 ["noid"] = "noid",
                 ["start"] = "Start",
                 ["end"] = "End",
+                ["debug"] = "Debug set to {0}",
                 ["humanoids"] = "Humanoids",
                 ["needselect"] = "Select NPC",
                 ["select"] = "Select",
@@ -194,11 +194,6 @@ namespace Oxide.Plugins
         {
             newsave = true;
         }
-
-        //private void OnServerShutdown()
-        //{
-        //    Unload();
-        //}
 
         private void Unload()
         {
@@ -343,9 +338,10 @@ namespace Oxide.Plugins
                 var atpl = hitinfo.Initiator as BasePlayer;
                 if (atpl == hp.player)
                 {
-                    DoLog($"Humanoid {hp.info.displayName} self damage, skipping...");
+                    //DoLog($"Humanoid {hp.info.displayName} self damage, skipping...");
                     return true;
                 }
+                DoLog($"Humanoid {hp.info.displayName} majority damage type == {hitinfo.damageTypes.GetMajorityDamageType().ToString()}");
                 if (atpl != null)
                 {
                     DoLog($"Player {atpl.displayName} attacking Humanoid {hp.info.displayName}");
@@ -480,6 +476,11 @@ namespace Oxide.Plugins
                         CuiHelper.DestroyUi(player, NPCGUI);
                         CuiHelper.DestroyUi(player, NPCGUS);
                         NPCSelectGUI(player);
+                        break;
+                    case "debug":
+                        configData.Options.debug = !configData.Options.debug;
+                        //SaveConfig();
+                        Message(iplayer, "debug", configData.Options.debug.ToString());
                         break;
                     case "selclose":
                         CuiHelper.DestroyUi(player, NPCGUS);
@@ -1017,7 +1018,7 @@ namespace Oxide.Plugins
             CuiElementContainer container = UI.Container(NPCGUS, UI.Color("242424", 1f), "0.1 0.1", "0.9 0.9", true, "Overlay");
             UI.Label(ref container, NPCGUS, UI.Color("#ffffff", 1f), description, 18, "0.23 0.92", "0.7 1");
             UI.Label(ref container, NPCGUS, UI.Color("#2244cc", 1f), Lang("standard"), 12, "0.79 0.92", "0.86 1");
-            UI.Button(ref container, NPCGUS, UI.Color("#d85540", 1f), Lang("close"), 12, "0.92 0.93", "0.985 0.98", $"noid selclose");
+            UI.Button(ref container, NPCGUS, UI.Color("#d85540", 1f), Lang("close"), 12, "0.92 0.93", "0.985 0.98", "noid selclose");
             int col = 0;
             int row = 0;
 
@@ -1471,8 +1472,11 @@ namespace Oxide.Plugins
                 RespawnNPC(player);
                 return;
             }
-            ulong x;
-            SpawnNPC(npcs[userid], out x);
+            if (npcs[userid] != null)
+            {
+                ulong x;
+                SpawnNPC(npcs[userid], out x);
+            }
         }
 
         public void RespawnNPC(BasePlayer player)
@@ -1517,13 +1521,13 @@ namespace Oxide.Plugins
             {
                 if (lurker.displayName == info.displayName) lurker.Kill();
             }
-            BasePlayer player = GameManager.server.CreateEntity("assets/prefabs/player/player.prefab", info.loc, info.rot).ToPlayer();
-            DoLog("Player object created...");
+            const string sci = "assets/prefabs/player/player.prefab";
+            BasePlayer player = GameManager.server.CreateEntity(sci, info.loc, info.rot, true).ToPlayer();
             HumanoidPlayer npc = player.gameObject.AddComponent<HumanoidPlayer>();
             DoLog("Humanoid object added to player...");
             npc.SetInfo(info);
-
             player.Spawn();
+
             npc.UpdateHealth(info);
             hpcacheid[info.userid] = npc;
             hpcachenm[info.displayName] = npc;
@@ -1624,6 +1628,7 @@ namespace Oxide.Plugins
             public bool respawn;
 
             // Location and movement
+            public float population;
             public float speed;
             public Vector3 spawnloc;
             public Vector3 loc;
@@ -1652,6 +1657,7 @@ namespace Oxide.Plugins
                 invulnerable = true;
                 entrypause = true;
                 respawn = true;
+                population = 1;
                 speed = 3f;
                 loc = position;
                 rot = rotation;
@@ -1676,7 +1682,7 @@ namespace Oxide.Plugins
         public class HumanoidMovement : MonoBehaviour
         {
             private HumanoidPlayer npc;
-            private Humanoid_SPF spf;
+            private Humanoid_Pathing spf;
             public List<Vector3> Paths = new List<Vector3>();
             public Vector3 StartPos = new Vector3(0f, 0f, 0f);
             public Vector3 followPos = new Vector3(0f, 0f, 0f);
@@ -1698,6 +1704,7 @@ namespace Oxide.Plugins
             public bool swimming;
             public bool flying;
             public bool paused;
+            public bool atmonument;
 
             public List<WaypointInfo> cachedWaypoints;
             private int currentWaypoint = -1;
@@ -1706,6 +1713,7 @@ namespace Oxide.Plugins
 
             private int followTick;
             private int gatherTick;
+            private int spfTick;
             public float followDistance = 5f;
             private readonly float lastHit;
 
@@ -1735,13 +1743,14 @@ namespace Oxide.Plugins
                 npc.player.transform.rotation = npc.info.rot;
                 npc.player.modelState.onground = true;
 
+                spf = new Humanoid_Pathing(npc.transform.position, npc.transform.position);
                 InvokeRepeating("DoAttack", 0f, 0.5f);
             }
 
             public void FixedUpdate()
             {
                 if (npc.player == null) return;
-                if (attacked && npc.info.defend && npc.info.locomode != LocoMode.Defend)
+                if (attacked && npc.info.defend && npc.info.locomode != LocoMode.Defend && npc.info.locomode != LocoMode.Monument)
                 {
                     Instance.DoLog($"Humanoid {npc.player.displayName} was attacked, changing locomode to Defend!");
                     npc.info.defaultLoco = npc.info.locomode;
@@ -1752,7 +1761,7 @@ namespace Oxide.Plugins
                 else
                 {
                     DetermineMove(); // based on locomode
-                    FindTarget();
+                    //FindTarget();
                     Move();
                 }
             }
@@ -1806,11 +1815,6 @@ namespace Oxide.Plugins
                             FindRoad();
                         }
                         break;
-                    case LocoMode.Monument:
-                        npc.info.cansit = false;
-                        npc.info.canride = false;
-                        npc.info.canmove = true;
-                        break;
                     case LocoMode.Defend:
                         npc.info.canmove = true;
                         npc.info.cansit = false;
@@ -1837,8 +1841,8 @@ namespace Oxide.Plugins
             {
                 if (!npc.info.canmove) return;
                 if (!npc.info.enable) return;
-
                 if (npc.player.IsWounded()) return;
+                FindTarget();
 
                 currPos = Vector3.Lerp(StartPos, followPos, waypointDone);
                 currPos.y = GetGroundY(currPos);
@@ -1878,7 +1882,7 @@ namespace Oxide.Plugins
                 npc.player.MovePosition(currPos);
                 Vector3 newEyesPos = currPos + new Vector3(0, 1.6f, 0);
                 npc.player.eyes.position.Set(newEyesPos.x, newEyesPos.y, newEyesPos.z);
-                npc.player.EnablePlayerCollider();
+                //npc.player.EnablePlayerCollider();
             }
 
             private void FindNextWaypoint()
@@ -1889,7 +1893,7 @@ namespace Oxide.Plugins
 
                 currentWaypoint++;
                 if (following || gathering) currentWaypoint = 0;
-                Instance.DoLog($"FindNextWaypoint({currentWaypoint.ToString()}), Paths.Count == {Paths.Count.ToString()}, time: {wpupdatetime}");
+                Instance.DoLog($"{npc.info.displayName} FindNextWaypoint({currentWaypoint.ToString()}), Paths.Count == {Paths.Count.ToString()}, time: {wpupdatetime}");
                 //if (npc.info.canride)
                 //{
                 //    Instance.DoLog($"[HumanoidMovement] {npc.info.displayName} can ride!");
@@ -1913,7 +1917,11 @@ namespace Oxide.Plugins
                     // At the end, walk the path the other way
                     if (Paths.Count > 0)
                     {
-                        Paths.Reverse();
+                        // Only reverse if not on the ring road
+                        if (npc.info.roadname.Length != 0 && npc.info.roadname != "Road 0")
+                        {
+                            Paths.Reverse();
+                        }
                         StartPos = Paths[0];
                         currentWaypoint = 0;
                     }
@@ -1933,8 +1941,19 @@ namespace Oxide.Plugins
                 StartPos = npc.info.loc;
                 if (endpos != StartPos)
                 {
-                    followPos = endpos;
-                    //followPos = spf.Get_SPF(StartPos, endpos);
+                    //followPos = endpos;
+                    spfTick++;
+                    if (spfTick > 498)
+                    {
+                        spfTick = 0;
+                        Instance.DoLog($"Calling Get_SPF({StartPos.ToString()}, {endpos.ToString()})");
+                        followPos = spf.Get_SPF(StartPos, endpos);
+                        Instance.DoLog($"..got {followPos.ToString()}");
+                    }
+                    else
+                    {
+                        followPos = endpos;
+                    }
                     tripTime = Vector3.Distance(followPos, StartPos)/s;
                     //npc.info.rot = Quaternion.LookRotation(EndPos - StartPos);
                     //if (npc.player != null) SetViewAngle(npc.player, npc.info.rot);
@@ -1986,7 +2005,17 @@ namespace Oxide.Plugins
             private void DoAttack()
             {
                 if (!defending) return;
-                npc.LookToward(attackEntity.transform.position);
+                if (attackEntity == null) return;
+                if (attackEntity?.IsDead() == true || attackEntity?.IsDestroyed == true) return;
+                if (attackEntity is BaseAnimalNPC)
+                {
+                    var newpos = attackEntity.transform.position - new Vector3(0, 1f, 0);
+                    npc.LookToward(newpos);
+                }
+                else
+                {
+                    npc.LookToward(attackEntity.transform.position);
+                }
                 BaseProjectile weapon = firstWeapon as BaseProjectile;
 
                 if (firstWeapon?.IsDestroyed != false || (weapon?.primaryMagazine.contents == 0 && npc.info.needsammo))
@@ -2015,17 +2044,19 @@ namespace Oxide.Plugins
 
             public void FindTarget(bool dofollow=false)
             {
+                //if (attackEntity?.IsDestroyed != true) return;
+
                 if (npc.info.hostile || dofollow)
                 {
                     List<BasePlayer> victims = new List<BasePlayer>();
                     Vis.Entities(npc.info.loc, 200f, victims);
-                    foreach (BasePlayer pl in victims)
+                    for (int i = 0; i < victims.Count; i++)
                     {
-                        if (pl == npc.player) continue;
-                        attackEntity = pl as BaseCombatEntity;
-                        npc.info.targetloc = pl.transform.position;
-                        Instance.DoLog($"{npc.info.displayName} found new target {attackEntity.ShortPrefabName}");
-                        spf = new Humanoid_SPF(npc.transform.position, npc.info.targetloc);
+                        if (victims[i] == npc.player) continue;
+                        attackEntity = victims[i] as BaseCombatEntity;
+                        npc.info.targetloc = victims[i].transform.position;
+                        Instance.DoLog($"{npc.info.displayName} found new target {victims[i].displayName}");
+                        //spf = new Humanoid_Pathing(npc.transform.position, npc.info.targetloc);
                         Instance.timer.Once(npc.info.followTime, () => attackEntity = null);
                         return;
                     }
@@ -2039,7 +2070,7 @@ namespace Oxide.Plugins
                         attackEntity = an as BaseCombatEntity;
                         npc.info.targetloc = an.transform.position;
                         Instance.DoLog($"{npc.info.displayName} found new target {attackEntity.ShortPrefabName}");
-                        spf = new Humanoid_SPF(npc.transform.position, npc.info.targetloc);
+                        //spf = new Humanoid_Pathing(npc.transform.position, npc.info.targetloc);
                         Instance.timer.Once(npc.info.followTime, () => attackEntity = null);
                         return;
                     }
@@ -2075,7 +2106,7 @@ namespace Oxide.Plugins
 
             private void Defend()
             {
-                if (attackEntity.IsDead() || attackEntity.IsDestroyed)
+                if (attackEntity?.IsDead() == true || attackEntity?.IsDestroyed == true)
                 {
                     attacked = false;
                     defending = false;
@@ -2669,6 +2700,8 @@ namespace Oxide.Plugins
 
             private void FiringEffect(BaseCombatEntity target, BaseProjectile weapon, float da, bool miss = false)
             {
+                if (target == null) return;
+                if (weapon == null) return;
                 ItemModProjectile component = weapon.primaryMagazine.ammoType.GetComponent<ItemModProjectile>();
                 Vector3 source = npc.player.transform.position + npc.player.GetOffset();
                 if (weapon.MuzzlePoint != null)
@@ -2686,15 +2719,15 @@ namespace Oxide.Plugins
                 }
                 else if (!Physics.SphereCast(source, .01f, vector32, out raycastHit, float.MaxValue, targetLayer))
                 {
-                    Instance.DoLog($"Attack failed: {npc.player.displayName} - {attackEntity.name}");
+                    Instance.DoLog($"Attack failed A: {npc.player.displayName} - {attackEntity.name}");
                     return;
                 }
                 else
                 {
                     hit = raycastHit.point;
                     target = raycastHit.GetCollider().GetComponent<BaseCombatEntity>();
-                    Instance.DoLog($"Attack failed: {raycastHit.GetCollider().name} - {(Layer)raycastHit.GetCollider().gameObject.layer}");
-                    miss = miss || target == null;
+                    Instance.DoLog($"Attack failed B: {raycastHit.GetCollider().name} - {(Layer)raycastHit.GetCollider().gameObject.layer}");
+                    //miss = miss || target == null;
                 }
                 weapon.primaryMagazine.contents--;
                 if (miss)
@@ -2743,19 +2776,17 @@ namespace Oxide.Plugins
             public HumanoidInfo info;
             public HumanoidMovement movement;
             public ProtectionProperties protection;
-            //public BaseEntity entity;
             public BasePlayer player;
 
             public BaseCombatEntity target;
+            public bool brainset;
 
             public void Awake()
             {
                 Instance.DoLog("[HumanoidPlayer] Getting player object...");
-                //entity = GetComponent<BaseEntity>();
                 player = GetComponent<BasePlayer>();
                 Instance.DoLog("[HumanoidPlayer] Adding player protection...");
                 protection = ScriptableObject.CreateInstance<ProtectionProperties>();
-                //Instance.DoLog("Setting player modelState...");
                 player.modelState.onground = true;
             }
 
@@ -2767,11 +2798,12 @@ namespace Oxide.Plugins
 
             public void SetInfo(HumanoidInfo info, bool update = false)
             {
-                //Instance.DoLog($"SetInfo called for {player.UserIDString}");
+                Instance.DoLog($"SetInfo called for {player.UserIDString}");
                 this.info = info;
                 this.info.locomode = this.info.defaultLoco;
-                Instance.DoLog("[HumanoidPlayer] Info var set.");
-                if (info == null) return;
+
+                //Instance.DoLog("[HumanoidPlayer] Info var set.");
+                //if (info == null) return;
                 player.displayName = info.displayName;
                 SetViewAngle(info.rot);
                 Instance.DoLog("[HumanoidPlayer] view angle set.");
@@ -2779,23 +2811,21 @@ namespace Oxide.Plugins
                 //player.EnablePlayerCollider();
                 if (!update)
                 {
-                    Instance.DoLog($"[HumanoidPlayer] Not an update...");
-                    //player.xp = ServerMgr.Xp.GetAgent(info.userid);
-                    Instance.DoLog($"[HumanoidPlayer]   setting stats...");
+                    Instance.DoLog("[HumanoidPlayer] Not an update...");
+                    Instance.DoLog("[HumanoidPlayer]   setting stats...");
                     player.stats = new PlayerStatistics(player);
-                    Instance.DoLog($"[HumanoidPlayer]   setting userid...");
+                    Instance.DoLog("[HumanoidPlayer]   setting userid...");
                     player.userID = info.userid;
-                    Instance.DoLog($"[HumanoidPlayer]   setting useridstring...");
+                    Instance.DoLog("[HumanoidPlayer]   setting useridstring...");
                     player.UserIDString = player.userID.ToString();
-                    Instance.DoLog($"[HumanoidPlayer]   moving...");
+                    Instance.DoLog("[HumanoidPlayer]   moving...");
                     player.MovePosition(info.loc);
-                    Instance.DoLog($"[HumanoidPlayer]   setting eyes...");
+                    Instance.DoLog("[HumanoidPlayer]   setting eyes...");
                     player.eyes = player.eyes ?? player.GetComponent<PlayerEyes>();
-                    //player.eyes.position = info.spawnInfo.position + new Vector3(0, 1.6f, 0);
                     Vector3 newEyes = info.loc + new Vector3(0, 1.6f, 0);
-                    Instance.DoLog($"[HumanoidPlayer]   setting eye position...");
+                    Instance.DoLog("[HumanoidPlayer]   setting eye position...");
                     player.eyes.position.Set(newEyes.x, newEyes.y, newEyes.z);
-                    Instance.DoLog($"[HumanoidPlayer]   ending sleep...");
+                    Instance.DoLog("[HumanoidPlayer]   ending sleep...");
                     player.EndSleeping();
                     protection.Clear();
                 }
@@ -2829,44 +2859,6 @@ namespace Oxide.Plugins
                 player.SendNetworkUpdate();
             }
 
-            public HeldEntity GetFirstTool()
-            {
-                if (player.inventory?.containerBelt == null) return null;
-                foreach (Item item in player.inventory.containerBelt.itemList)
-                {
-                    if (item.CanBeHeld() && item.info.category == ItemCategory.Tool)
-                    {
-                        return item.GetHeldEntity() as HeldEntity;
-                    }
-                }
-                return null;
-            }
-
-            public HeldEntity GetFirstInstrument()
-            {
-                if (player.inventory?.containerBelt == null) return null;
-                foreach (Item item in player.inventory.containerBelt.itemList)
-                {
-                    if (item.CanBeHeld() && item.info.category == ItemCategory.Fun)
-                    {
-                        return item.GetHeldEntity() as HeldEntity;
-                    }
-                }
-                return null;
-            }
-
-            public void UnequipAll()
-            {
-                if (player.inventory?.containerBelt == null) return;
-                foreach (Item item in player.inventory.containerBelt.itemList)
-                {
-                    if (item.CanBeHeld())
-                    {
-                        (item.GetHeldEntity() as HeldEntity)?.SetHeld(false);
-                    }
-                }
-            }
-
             public bool HasAmmo(Item item)
             {
                 if (!info.needsammo) return true;
@@ -2881,6 +2873,18 @@ namespace Oxide.Plugins
                 player.SendNetworkUpdate();
                 if (!info.needsammo) return; // TODO
                 player.SignalBroadcast(BaseEntity.Signal.Reload, string.Empty);
+            }
+
+            public void UnequipAll()
+            {
+                if (player.inventory?.containerBelt == null) return;
+                foreach (Item item in player.inventory.containerBelt.itemList)
+                {
+                    if (item.CanBeHeld())
+                    {
+                        (item.GetHeldEntity() as HeldEntity)?.SetHeld(false);
+                    }
+                }
             }
 
             public HeldEntity GetFirstWeapon()
@@ -2914,6 +2918,20 @@ namespace Oxide.Plugins
                 return weapon;
             }
 
+            public HeldEntity GetFirstTool()
+            {
+                if (player.inventory?.containerBelt == null) return null;
+                foreach (Item item in player.inventory.containerBelt.itemList)
+                {
+                    if (item.CanBeHeld() && item.info.category == ItemCategory.Tool)
+                    {
+                        movement.firstWeapon = item.GetHeldEntity() as HeldEntity;
+                        return movement.firstWeapon;// item.GetHeldEntity() as HeldEntity;
+                    }
+                }
+                return null;
+            }
+
             public HeldEntity EquipFirstTool()
             {
                 HeldEntity tool = GetFirstTool();
@@ -2923,6 +2941,19 @@ namespace Oxide.Plugins
                     tool.SetHeld(true);
                 }
                 return tool;
+            }
+
+            public HeldEntity GetFirstInstrument()
+            {
+                if (player.inventory?.containerBelt == null) return null;
+                foreach (Item item in player.inventory.containerBelt.itemList)
+                {
+                    if (item.CanBeHeld() && item.info.category == ItemCategory.Fun)
+                    {
+                        return item.GetHeldEntity() as HeldEntity;
+                    }
+                }
+                return null;
             }
         }
 
@@ -2974,13 +3005,13 @@ namespace Oxide.Plugins
         /// <summary>
         /// Find obstruction-free path to target
         /// </summary>
-        private class Humanoid_SPF
+        private class Humanoid_Pathing
         {
             public Vector3 originalTarget;
             public Vector3 shortestPath;
             public bool foundSPF;
 
-            public Humanoid_SPF(Vector3 source, Vector3 target)
+            public Humanoid_Pathing(Vector3 source, Vector3 target)
             {
                 foundSPF = false;
                 originalTarget = target;
@@ -2989,16 +3020,17 @@ namespace Oxide.Plugins
 
             public Vector3 Get_SPF(Vector3 source, Vector3 target)
             {
+                //if (Physics.Raycast(source, target, constructionMask))
                 if (Physics.Raycast(source, target, obstructionMask))
                 {
                     foundSPF = true;
-                    Instance.DoLog("Get_SPF returning originalTarget");
+                    Instance.DoLog("Get_SPF returning originalTarget as shortestPath");
                     shortestPath = target;
                     return target;
                 }
                 if (foundSPF)
                 {
-                    Instance.DoLog("Get_SPF returning shortestPath");
+                    Instance.DoLog("Get_SPF returning already found shortestPath");
                     return shortestPath;
                 }
 
@@ -3011,8 +3043,8 @@ namespace Oxide.Plugins
                     testPoint += lookLeft * i * 2;
                     testPoint.y = source.y;
 
-                    //if (Physics.Linecast(testPoint, target, obstructionMask))
-                    if (Physics.Raycast(testPoint, target, obstructionMask))
+                    if (Physics.Linecast(testPoint, target, obstructionMask))
+                    //if (Physics.Raycast(testPoint, target, constructionMask))
                     {
                         Instance.DoLog($"Get_SPF returning new intermediate target L at {testPoint.ToString()}");
                         foundSPF = true;
@@ -3023,6 +3055,7 @@ namespace Oxide.Plugins
                     {
                         testPoint += lookRight * i * 2;
                         testPoint.y = source.y;
+                        //if (Physics.Raycast(testPoint, target, constructionMask))
                         if (Physics.Raycast(testPoint, target, obstructionMask))
                         {
                             Instance.DoLog($"Get_SPF returning new intermediate target R at {testPoint.ToString()}");
@@ -3175,64 +3208,18 @@ namespace Oxide.Plugins
         #endregion
 
         #region Helpers
-        //private unsafe float Q_rsqrt(float number)
-        //{
-        //    long i;
-        //    float x2, y;
-        //    const float threehalfs = 1.5f;
-
-        //    x2 = number * 0.5f;
-        //    y = number;
-        //    i = * (long *) &y;
-        //    i = 0x5f3759df - (i >> 1);
-        //    y = * (float * ) &i;
-        //    y = y * (threehalfs - (x2 * y * y));
-
-        //    return y;
-        //}
-        //private float InvSqrt(float x)
-        //{
-        //    float xhalf = 0.5f * x;
-        //    int i = BitConverter.ToInt32(BitConverter.GetBytes(x), 0);
-        //    i = 0x5f3759df - (i >> 1); // 0x5f375a86 ?
-        //    x = BitConverter.ToSingle(BitConverter.GetBytes(i), 0);
-        //    x = x * (1.5f - xhalf * x * x);
-        //    return x;
-        //}
-        [StructLayout(LayoutKind.Explicit)]
-        private struct FloatIntUnion
-        {
-            [FieldOffset(0)]
-            public float f;
-
-            [FieldOffset(0)]
-            public int tmp;
-        }
-
-        public static float InvSqrt(float z)
-        {
-            if (z == 0) return 0;
-            FloatIntUnion u;
-            u.tmp = 0;
-            float xhalf = 0.5f * z;
-            u.f = z;
-            u.tmp = 0x5f375a86 - (u.tmp >> 1);
-            u.f *= 1.5f - (xhalf * u.f * u.f);
-            return u.f * z;
-        }
-
         private static bool GetBoolValue(string value)
         {
             if (value == null) return false;
             value = value.Trim().ToLower();
             switch (value)
             {
-                case "t":
-                case "true":
-                case "1":
-                case "yes":
-                case "y":
                 case "on":
+                case "true":
+                case "yes":
+                case "1":
+                case "t":
+                case "y":
                     return true;
                 default:
                     return false;
