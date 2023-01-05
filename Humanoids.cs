@@ -37,7 +37,7 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("Humanoids", "RFC1920", "1.2.3")]
+    [Info("Humanoids", "RFC1920", "1.2.4")]
     [Description("Adds interactive NPCs which can be modded by other plugins")]
     internal class Humanoids : RustPlugin
     {
@@ -2319,7 +2319,7 @@ namespace Oxide.Plugins
                 foreach (BaseChair mountable in chairs.Distinct().ToList())
                 {
                     Instance.DoLog($"[HumanoidMovement] {npc.player.displayName} trying to sit in chair...");
-                    if (mountable.IsMounted())
+                    if (mountable.IsBusy())
                     {
                         Instance.DoLog("[HumanoidMovement] Someone is sitting here.");
                         continue;
