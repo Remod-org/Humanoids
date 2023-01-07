@@ -37,13 +37,13 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("Humanoids", "RFC1920", "1.2.4")]
+    [Info("Humanoids", "RFC1920", "1.2.5")]
     [Description("Adds interactive NPCs which can be modded by other plugins")]
     internal class Humanoids : RustPlugin
     {
         #region vars
         [PluginReference]
-        private readonly Plugin Kits, RoadFinder;
+        private readonly Plugin Kits, RoadFinder, GUIShop, NPCShop;
 
         private static readonly PathFinding PathFinding;
 
@@ -189,6 +189,67 @@ namespace Oxide.Plugins
 
                 if (isopen.Contains(player.userID)) isopen.Remove(player.userID);
             }
+        }
+
+        // 07 Jan 2023: Currently only called by Teleportication 1.3.8
+        private void OnTownSet(Vector3 location)
+        {
+            if (GUIShop || NPCShop)
+            {
+                DoLog("OnTownSet called!");
+
+                BuildingPrivlidge bp = null;
+                List<BaseEntity> entities = new List<BaseEntity>();
+                List<BaseEntity> frames = new List<BaseEntity>();
+                List<ulong> processedNPCs = new List<ulong>();
+
+                Vis.Entities(location, 100f, entities);
+                foreach (BaseEntity entity in entities.OrderBy(x => Vector3.Distance(location, x.transform.position)))
+                {
+                    if (entity.ShortPrefabName == configData.Options.townPrefab)
+                    {
+                        DoLog($"Found a {configData.Options.townPrefab} at {entity.transform.position}");
+                        frames.Add(entity);
+                    }
+                    if (entity is BuildingPrivlidge && bp == null)
+                    {
+                        // Only get the first TC we find, which should be closest to the town set point
+                        DoLog($"Found a TC at {entity.transform.position}");
+                        bp = entity as BuildingPrivlidge;
+                    }
+                }
+                DoLog($"Found {frames.Count} of {configData.Options.townPrefab}");
+                foreach (KeyValuePair<ulong, HumanoidInfo> npc in new Dictionary<ulong, HumanoidInfo>(npcs))
+                {
+                    if (npc.Value.shopnpc && !processedNPCs.Contains(npc.Key))
+                    {
+                        foreach (BaseEntity frame in new List<BaseEntity>(frames))
+                        {
+                            if (bp != null && frame.GetBuildingPrivilege() != bp)
+                            {
+                                continue;
+                            }
+                            // Place/move NPC here
+                            SetHumanoidInfo(npc.Key, "spawn", GetWindowPos(frame));
+                            SetHumanoidInfo(npc.Key, "rot", frame.transform.rotation.ToString());
+                            DoLog("Moved NPC to town");
+                            frames.Remove(frame);
+                            break;
+                        }
+                        RespawnNPC(npc.Key);
+                        processedNPCs.Add(npc.Key);
+                    }
+                }
+            }
+        }
+
+        private string GetWindowPos(BaseEntity frame)
+        {
+            Vector3 rear = -frame.transform.right; // Yes, right is in front...
+            Vector3 newPos = frame.transform.position + new Vector3(rear.x, rear.y, rear.z + 0.5f);
+
+            DoLog($"{configData.Options.townPrefab} located at {frame.transform.position}.  NPC will be at {newPos}");
+            return newPos.ToString();
         }
 
         private void OnNewSave()
@@ -875,6 +936,9 @@ namespace Oxide.Plugins
                 case "lootable":
                     hp.info.lootable = !GetBoolValue(data);
                     break;
+                case "shopnpc":
+                    hp.info.shopnpc = !GetBoolValue(data);
+                    break;
                 case "ahostile":
                     hp.info.ahostile = !GetBoolValue(data);
                     break;
@@ -968,6 +1032,7 @@ namespace Oxide.Plugins
                     hp.info.loc = StringToVector3(data);
                     break;
                 case "rot":
+                    hp.info.rot = StringToQuaternion(data);
                     break;
             }
             DoLog("Saving Data");
@@ -1105,6 +1170,7 @@ namespace Oxide.Plugins
                     { "health", npcs[npc].health.ToString() },
                     { "invulnerable", npcs[npc].invulnerable.ToString() },
                     { "lootable", npcs[npc].lootable.ToString() },
+                    { "shopnpc", npcs[npc].shopnpc.ToString() },
                     { "ahostile", npcs[npc].ahostile.ToString() },
                     { "hostile", npcs[npc].hostile.ToString() },
                     { "defend", npcs[npc].defend.ToString() },
@@ -1134,6 +1200,7 @@ namespace Oxide.Plugins
                     { "enable", true },
                     { "invulnerable", true },
                     { "lootable", true },
+                    { "shopnpc", true },
                     { "ahostile", true },
                     { "hostile", true },
                     { "defend", true },
@@ -1636,6 +1703,7 @@ namespace Oxide.Plugins
             public bool carworthy;
 
             public bool ephemeral;
+            public bool shopnpc;
             public bool ahostile;
             public bool hostile;
             public bool defend;
@@ -3576,6 +3644,7 @@ namespace Oxide.Plugins
         {
             configData = Config.ReadObject<ConfigData>();
 
+            if (configData.Options.townPrefab == null) configData.Options.townPrefab = "wall.window";
             configData.Version = Version;
             SaveConfig(configData);
         }
@@ -3604,6 +3673,12 @@ namespace Oxide.Plugins
 
             [JsonProperty(PropertyName = "Move NPCs to 0,0,0 on server wipe")]
             public bool zeroOnWipe;
+
+            [JsonProperty(PropertyName = "Move Shop NPCs to town when town set")]
+            public bool moveShopNPCs;
+
+            [JsonProperty(PropertyName = "Prefab to check for Shop NPCs at town")]
+            public string townPrefab;
 
             [JsonProperty(PropertyName = "Close GUI on NPC spawn here")]
             public bool closeGUIOnSpawnHere;
