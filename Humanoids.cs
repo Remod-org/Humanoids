@@ -37,13 +37,13 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("Humanoids", "RFC1920", "1.2.5")]
+    [Info("Humanoids", "RFC1920", "1.2.6")]
     [Description("Adds interactive NPCs which can be modded by other plugins")]
     internal class Humanoids : RustPlugin
     {
         #region vars
         [PluginReference]
-        private readonly Plugin Kits, RoadFinder, GUIShop, NPCShop;
+        private readonly Plugin Kits, RoadFinder, GUIShop, NPCShop, ChatBot;
 
         private static readonly PathFinding PathFinding;
 
@@ -191,9 +191,11 @@ namespace Oxide.Plugins
             }
         }
 
-        // 07 Jan 2023: Currently only called by Teleportication 1.3.8
+        // 07 Jan 2023: Currently only called by Teleportication 1.3.8 and above
         private void OnTownSet(Vector3 location)
         {
+            configData.Options.townLocation = location;
+            SaveConfig(configData);
             if (GUIShop || NPCShop)
             {
                 DoLog("OnTownSet called!");
@@ -230,8 +232,9 @@ namespace Oxide.Plugins
                                 continue;
                             }
                             // Place/move NPC here
-                            SetHumanoidInfo(npc.Key, "spawn", GetWindowPos(frame));
+                            SetHumanoidInfo(npc.Key, "spawn", GetPrefabPos(frame));
                             SetHumanoidInfo(npc.Key, "rot", frame.transform.rotation.ToString());
+                            SetHumanoidInfo(npc.Key, "townrel", (location - frame.transform.position).ToString());
                             DoLog("Moved NPC to town");
                             frames.Remove(frame);
                             break;
@@ -243,7 +246,7 @@ namespace Oxide.Plugins
             }
         }
 
-        private string GetWindowPos(BaseEntity frame)
+        private string GetPrefabPos(BaseEntity frame)
         {
             Vector3 rear = -frame.transform.right; // Yes, right is in front...
             Vector3 newPos = frame.transform.position + new Vector3(rear.x, rear.y, rear.z + 0.5f);
@@ -847,7 +850,7 @@ namespace Oxide.Plugins
         #endregion
 
         #region Our Inbound Hooks
-        private bool IsHumanoid(BasePlayer player) => player.GetComponentInParent<HumanoidPlayer>() != null;
+        private bool IsHumanoid(BasePlayer player) => player?.GetComponentInParent<HumanoidPlayer>() != null;
 
         private ulong SpawnHumanoid(Vector3 position, Quaternion currentRot, string name = "noid", bool ephemeral = false, ulong clone = 0)
         {
@@ -1030,6 +1033,9 @@ namespace Oxide.Plugins
                 case "spawn":
                 case "loc":
                     hp.info.loc = StringToVector3(data);
+                    break;
+                case "townrel":
+                    hp.info.townRel = StringToVector3(data);
                     break;
                 case "rot":
                     hp.info.rot = StringToQuaternion(data);
@@ -1724,6 +1730,7 @@ namespace Oxide.Plugins
             public Vector3 loc;
             public Quaternion rot;
             public Vector3 targetloc;
+            public Vector3 townRel;
             public float health;
             public float maxDistance;
             public float attackDistance;
@@ -2213,7 +2220,7 @@ namespace Oxide.Plugins
                 }
                 if (attackitem.uid != npc.player.svActiveItemID)
                 {
-                    npc.SetActive(attackitem.uid);
+                    npc.SetActive((uint)attackitem.uid.Value);
                 }
 
                 Follow();
@@ -2472,11 +2479,11 @@ namespace Oxide.Plugins
 
                 foreach (LootContainer re in res.Distinct().ToList())
                 {
-                    if (gatherIgnore.Contains(re.net.ID)) continue;
+                    if (gatherIgnore.Contains((uint)re.net.ID.Value)) continue;
                     float rey = GetGroundY(re.transform.position);
                     if ((rey - 3) > GetGroundY(npc.transform.position))
                     {
-                        gatherIgnore.Add(re.net.ID);
+                        gatherIgnore.Add((uint)re.net.ID.Value);
                         continue;
                     }
                     //if ((rey + 9) > GetGroundY(npc.transform.position)) continue;
@@ -3084,7 +3091,7 @@ namespace Oxide.Plugins
 
             public void SetActive(uint id)
             {
-                player.svActiveItemID = id;
+                player.svActiveItemID = new ItemId(id);
                 player.SendNetworkUpdate();
                 if (!info.needsammo) return; // TODO
                 player.SignalBroadcast(BaseEntity.Signal.Reload, string.Empty);
@@ -3682,6 +3689,8 @@ namespace Oxide.Plugins
 
             [JsonProperty(PropertyName = "Close GUI on NPC spawn here")]
             public bool closeGUIOnSpawnHere;
+
+            public Vector3 townLocation;
 
             public bool debug;
         }
