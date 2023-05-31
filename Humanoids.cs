@@ -37,7 +37,7 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("Humanoids", "RFC1920", "1.2.6")]
+    [Info("Humanoids", "RFC1920", "1.2.7")]
     [Description("Adds interactive NPCs which can be modded by other plugins")]
     internal class Humanoids : RustPlugin
     {
@@ -571,7 +571,7 @@ namespace Oxide.Plugins
                     case "create":
                     case "new":
                         HumanoidInfo npc = new HumanoidInfo(0, player.transform.position, player.transform.rotation);
-                        ulong x = 0;
+                        ulong x;
                         SpawnNPC(npc, out x);
                         NPCSelectGUI(player);
                         break;
@@ -2438,6 +2438,7 @@ namespace Oxide.Plugins
 
             public void Gather()
             {
+                if (attackEntity == null) return;
                 gatherTick++;
                 //Instance.DoLog($"Gather() called for {npc.info.displayName}");
                 if (attackEntity?.IsDestroyed != false)
@@ -2495,8 +2496,9 @@ namespace Oxide.Plugins
                 }
             }
 
-            public void DoGather(LootContainer re)
+            public void DoGather(LootContainer re = null)
             {
+                if (re == null) return;
                 // gather
                 npc.info.canmove = false;
                 moving = false;
