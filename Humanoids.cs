@@ -1,7 +1,7 @@
 #region License (GPL v2)
 /*
     Humanoids - NPC Players that can walk, fight, navigate, etc.
-    Copyright (c) 2022 RFC1920 <desolationoutpostpve@gmail.com>
+    Copyright (c) 2023 RFC1920 <desolationoutpostpve@gmail.com>
 
     This program is free software; you can redistribute it and/or
     modify it under the terms of the GNU General Public License v2.0.
@@ -37,7 +37,7 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("Humanoids", "RFC1920", "1.2.7")]
+    [Info("Humanoids", "RFC1920", "1.2.8")]
     [Description("Adds interactive NPCs which can be modded by other plugins")]
     internal class Humanoids : RustPlugin
     {
@@ -317,6 +317,7 @@ namespace Oxide.Plugins
         private void OnPlayerInput(BasePlayer player, InputState input)
         {
             if (player == null || input == null) return;
+            if (!player.userID.IsSteamId()) return;
             //if (input.current.buttons > 0)
             //    Puts($"OnPlayerInput: {input.current.buttons}");
             if (!input.WasJustPressed(BUTTON.USE)) return;
@@ -347,6 +348,7 @@ namespace Oxide.Plugins
         private object CanHelicopterTarget(PatrolHelicopterAI heli, BasePlayer player)
         {
             if (player == null) return null;
+            if (player.userID.IsSteamId()) return null;
             if (IsHumanoid(player)) return true;
             return null;
         }
@@ -354,6 +356,7 @@ namespace Oxide.Plugins
         private object CanHelicopterStrafeTarget(PatrolHelicopterAI heli, BasePlayer player)
         {
             if (player == null) return null;
+            if (player.userID.IsSteamId()) return null;
             if (IsHumanoid(player)) return true;
             return null;
         }
@@ -362,6 +365,7 @@ namespace Oxide.Plugins
         {
             BasePlayer player = entity.ToPlayer();
             if (player == null) return null;
+            if (player.userID.IsSteamId()) return null;
             if (IsHumanoid(player)) return true;
             return null;
         }
@@ -513,9 +517,9 @@ namespace Oxide.Plugins
             }
         }
 
-        private object OnUserCommand(BasePlayer player, string command, string[] args)
+        private object OnUserCommand(IPlayer player, string command, string[] args)
         {
-            if (command != "noid" && isopen.Contains(player.userID)) return true;
+            if (command != "noid" && isopen.Contains(ulong.Parse(player.Id))) return true;
             return null;
         }
 
