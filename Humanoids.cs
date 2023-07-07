@@ -37,7 +37,7 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("Humanoids", "RFC1920", "1.2.8")]
+    [Info("Humanoids", "RFC1920", "1.2.9")]
     [Description("Adds interactive NPCs which can be modded by other plugins")]
     internal class Humanoids : RustPlugin
     {
@@ -2744,7 +2744,7 @@ namespace Oxide.Plugins
 
             private bool IsSwimming()
             {
-                return WaterLevel.Test(npc.player.transform.position + new Vector3(0, 0.65f, 0));
+                return WaterLevel.Test(npc.player.transform.position + new Vector3(0, 0.65f, 0), true, true);
             }
 
             public void FindRoad()
