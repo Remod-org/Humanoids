@@ -37,7 +37,7 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("Humanoids", "RFC1920", "1.2.9")]
+    [Info("Humanoids", "RFC1920", "1.3.0")]
     [Description("Adds interactive NPCs which can be modded by other plugins")]
     internal class Humanoids : RustPlugin
     {
@@ -340,6 +340,7 @@ namespace Oxide.Plugins
                     DoLog($"Trying to pause {hp.info.displayName}");
                     hp.movement.Stop(true);
                 }
+                hp.movement.Jump();
                 Interface.Oxide.CallHook("OnUseNPC", hp.player, player);
                 SaveData();
             }
@@ -2376,6 +2377,13 @@ namespace Oxide.Plugins
                 return false;
             }
 
+            public void Jump()
+            {
+                Instance.Puts("Jump");
+                npc.player.serverInput.WasDown(BUTTON.JUMP);
+                npc.player.modelState?.SetFlag(ModelState.Flag.Jumped, true);
+            }
+
             public void Stand()
             {
                 if (sitting)
@@ -3092,7 +3100,8 @@ namespace Oxide.Plugins
                 if (!info.needsammo) return true;
                 BaseProjectile weapon = item.GetHeldEntity() as BaseProjectile;
                 if (weapon == null) return true;
-                return weapon.primaryMagazine.contents > 0 || weapon.primaryMagazine.CanReload(player);
+                //return weapon.primaryMagazine.contents > 0 || weapon.primaryMagazine.CanReload(player);
+                return weapon.primaryMagazine.contents > 0 || weapon.primaryMagazine.CanReload(null);
             }
 
             public void SetActive(uint id)
