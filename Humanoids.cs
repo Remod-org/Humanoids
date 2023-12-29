@@ -37,7 +37,7 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("Humanoids", "RFC1920", "1.3.0")]
+    [Info("Humanoids", "RFC1920", "1.3.1")]
     [Description("Adds interactive NPCs which can be modded by other plugins")]
     internal class Humanoids : RustPlugin
     {
@@ -69,7 +69,7 @@ namespace Oxide.Plugins
         private static Dictionary<ulong, HumanoidInfo> npcs = new Dictionary<ulong, HumanoidInfo>();
 
         // This is critical to the speed of operations on FindHumanoidByID/Name
-        private Dictionary<ulong, HumanoidPlayer>  hpcacheid = new Dictionary<ulong, HumanoidPlayer>();
+        private Dictionary<ulong, HumanoidPlayer> hpcacheid = new Dictionary<ulong, HumanoidPlayer>();
         private Dictionary<string, HumanoidPlayer> hpcachenm = new Dictionary<string, HumanoidPlayer>();
 
         private static Dictionary<string, Road> roads = new Dictionary<string, Road>();
@@ -93,7 +93,7 @@ namespace Oxide.Plugins
 
         private void DoLog(string message)
         {
-            if (configData.Options.debug) Interface.Oxide.LogInfo(message);
+            if (configData.Options.debug) Interface.GetMod().LogInfo(message);
         }
         #endregion
 
@@ -285,7 +285,7 @@ namespace Oxide.Plugins
         private void LoadData()
         {
             DoLog("LoadData called");
-            data = Interface.Oxide.DataFileSystem.GetFile(Name + "/humanoids");
+            data = Interface.GetMod().DataFileSystem.GetFile(Name + "/humanoids");
             data.Settings.ReferenceLoopHandling = ReferenceLoopHandling.Ignore;
             data.Settings.Converters = new JsonConverter[] { new UnityQuaternionConverter(), new UnityVector3Converter() };
 
@@ -294,21 +294,21 @@ namespace Oxide.Plugins
 
             foreach (KeyValuePair<ulong, HumanoidInfo> pls in npcs)
             {
-               DoLog($"{pls.Value.userid}");
+                DoLog($"{pls.Value.userid}");
             }
         }
 
         private void SaveData()
         {
             Dictionary<ulong, HumanoidInfo> tmpnpcs = new Dictionary<ulong, HumanoidInfo>();
-            foreach(KeyValuePair<ulong, HumanoidInfo> x in npcs)
+            foreach (KeyValuePair<ulong, HumanoidInfo> x in npcs)
             {
                 if (!x.Value.ephemeral)
                 {
                     tmpnpcs.Add(x.Key, x.Value);
                 }
             }
-            Interface.Oxide.DataFileSystem.WriteObject(Name + "/humanoids", tmpnpcs);
+            Interface.GetMod().DataFileSystem.WriteObject(Name + "/humanoids", tmpnpcs);
             tmpnpcs.Clear();
         }
         #endregion
@@ -341,7 +341,7 @@ namespace Oxide.Plugins
                     hp.movement.Stop(true);
                 }
                 hp.movement.Jump();
-                Interface.Oxide.CallHook("OnUseNPC", hp.player, player);
+                Interface.GetMod().CallHook("OnUseNPC", hp.player, player);
                 SaveData();
             }
         }
@@ -441,7 +441,7 @@ namespace Oxide.Plugins
                 //        SendMessage(hp, hitinfo.InitiatorPlayer, GetRandomMessage(hp.info.message_hurt));
                 //    }
                 //}
-                Interface.Oxide.CallHook("OnHitNPC", entity.GetComponent<BaseCombatEntity>(), hitinfo);
+                Interface.GetMod().CallHook("OnHitNPC", entity.GetComponent<BaseCombatEntity>(), hitinfo);
                 if (hp.info.invulnerable)
                 {
                     hitinfo.damageTypes = new DamageTypeList();
@@ -502,7 +502,7 @@ namespace Oxide.Plugins
         {
             if (npcs.ContainsKey(target.userID))
             {
-                Interface.Oxide.CallHook("OnLootNPC", looter.inventory.loot, target, target.userID);
+                Interface.GetMod().CallHook("OnLootNPC", looter.inventory.loot, target, target.userID);
             }
         }
 
@@ -510,11 +510,11 @@ namespace Oxide.Plugins
         {
             if (looter == null || !(entity is PlayerCorpse)) return;
             ulong userId = ((PlayerCorpse)entity).playerSteamID;
-            HumanoidInfo hi = null;
+            HumanoidInfo hi;
             npcs.TryGetValue(userId, out hi);
             if (hi != null)
             {
-                Interface.Oxide.CallHook("OnLootNPC", looter.inventory.loot, entity, userId);
+                Interface.GetMod().CallHook("OnLootNPC", looter.inventory.loot, entity, userId);
             }
         }
 
@@ -723,7 +723,7 @@ namespace Oxide.Plugins
                             CuiHelper.DestroyUi(player, NPCGUM);
                             ulong userid = ulong.Parse(args[1]);
                             npc = npcs[userid];
-                            switch(args[3])
+                            switch (args[3])
                             {
                                 case "end":
                                     npc.monend = args[2];
@@ -991,7 +991,7 @@ namespace Oxide.Plugins
                     hp.info.dropWeapon = !GetBoolValue(data);
                     break;
                 case "respawn":
-                    hp.info.respawn= !GetBoolValue(data);
+                    hp.info.respawn = !GetBoolValue(data);
                     break;
                 case "respawnTimer":
                 case "respawntimer":
@@ -1410,7 +1410,7 @@ namespace Oxide.Plugins
             CuiHelper.AddUi(player, container);
         }
 
-        private void NPCRoadGUI(BasePlayer player, ulong npc, string road  = null)
+        private void NPCRoadGUI(BasePlayer player, ulong npc, string road = null)
         {
             if (player == null) return;
             IsOpen(player.userID, true);
@@ -1464,7 +1464,7 @@ namespace Oxide.Plugins
             int row = 0;
 
             HumanoidPlayer hp = FindHumanoidByID(npc);
-            foreach (LocoMode mode in (LocoMode[]) Enum.GetValues(typeof(LocoMode)))
+            foreach (LocoMode mode in (LocoMode[])Enum.GetValues(typeof(LocoMode)))
             {
                 float[] posb = GetButtonPositionP(row, col);
 
@@ -2037,9 +2037,9 @@ namespace Oxide.Plugins
                         StartPos = Paths[0];
                         currentWaypoint = 0;
                     }
-//                    StartPos = EndPos = Vector3.zero;
-//                    enable = false;
-//                    return;
+                    //                    StartPos = EndPos = Vector3.zero;
+                    //                    enable = false;
+                    //                    return;
                 }
 
                 if (Paths.Count > 0)
@@ -2060,20 +2060,20 @@ namespace Oxide.Plugins
                         tripTime = Vector3.Distance(followPos, StartPos) / s;
                     }
                     npc.LookToward(followPos);
-                ////followPos = endpos;
-                //spfTick++;
-                //if (spfTick > 498)
-                //{
-                //    spfTick = 0;
-                //    Instance.DoLog($"Calling Get_SPF({StartPos.ToString()}, {endpos.ToString()})");
-                //    followPos = spf.Get_SPF(StartPos, endpos);
-                //    Instance.DoLog($"..got {followPos.ToString()}");
-                //}
-                //else
-                //{
-                //    followPos = endpos;
-                //}
-                    tripTime = Vector3.Distance(followPos, StartPos)/s;
+                    ////followPos = endpos;
+                    //spfTick++;
+                    //if (spfTick > 498)
+                    //{
+                    //    spfTick = 0;
+                    //    Instance.DoLog($"Calling Get_SPF({StartPos.ToString()}, {endpos.ToString()})");
+                    //    followPos = spf.Get_SPF(StartPos, endpos);
+                    //    Instance.DoLog($"..got {followPos.ToString()}");
+                    //}
+                    //else
+                    //{
+                    //    followPos = endpos;
+                    //}
+                    tripTime = Vector3.Distance(followPos, StartPos) / s;
                     //npc.info.rot = Quaternion.LookRotation(EndPos - StartPos);
                     //if (npc.player != null) SetViewAngle(npc.player, npc.info.rot);
                     elapsedTime = 0f;
@@ -2086,7 +2086,7 @@ namespace Oxide.Plugins
                 //Paths.RemoveAt(0);
                 float d = Vector3.Distance(followPos, StartPos);
                 float ts = Time.realtimeSinceStartup;
-//                Instance.DoLog($"SetMovementPoint({currentWaypoint.ToString()}) Start: {StartPos.ToString()}, current {npc.info.loc.ToString()}, End: {endpos.ToString()}), time: {ts}");
+                //                Instance.DoLog($"SetMovementPoint({currentWaypoint.ToString()}) Start: {StartPos.ToString()}, current {npc.info.loc.ToString()}, End: {endpos.ToString()}), time: {ts}");
             }
 
             public void PathFinding()
@@ -2240,7 +2240,7 @@ namespace Oxide.Plugins
                 }
             }
 
-            public void FindTarget(bool dofollow=false)
+            public void FindTarget(bool dofollow = false)
             {
                 //if (attackEntity?.IsDestroyed != true) return;
 
@@ -2650,7 +2650,6 @@ namespace Oxide.Plugins
                         npc.target = null;
                         targetLoc = new Vector3(randompos.x, 0, randompos.y);
                         targetLoc += npc.info.spawnloc;
-                        targetHorsePos = targetLoc;
                     }
                     else
                     {
@@ -2661,13 +2660,11 @@ namespace Oxide.Plugins
                 {
                     if (Vector3.Distance(npc.player.transform.position, targetHorsePos) > 10 && hasMoved)
                     {
-                        targetLoc = targetHorsePos;
                     }
                     else
                     {
                         targetLoc = new Vector3(randompos.x, 0, randompos.y);
                         targetLoc += npc.player.transform.position;
-                        targetHorsePos = targetLoc;
                     }
                 }
 
@@ -3100,8 +3097,7 @@ namespace Oxide.Plugins
                 if (!info.needsammo) return true;
                 BaseProjectile weapon = item.GetHeldEntity() as BaseProjectile;
                 if (weapon == null) return true;
-                //return weapon.primaryMagazine.contents > 0 || weapon.primaryMagazine.CanReload(player);
-                return weapon.primaryMagazine.contents > 0 || weapon.primaryMagazine.CanReload(null);
+                return weapon.primaryMagazine.contents > 0;// || weapon.primaryMagazine.CanReload(player);
             }
 
             public void SetActive(uint id)
@@ -3271,7 +3267,7 @@ namespace Oxide.Plugins
                     return shortestPath;
                 }
 
-                Vector3 lookLeft  = Vector2.Perpendicular((source - target).normalized);
+                Vector3 lookLeft = Vector2.Perpendicular((source - target).normalized);
                 Vector3 lookRight = Vector2.Perpendicular(-(source - target).normalized);
                 Vector3 testPoint = source;
 
@@ -3311,7 +3307,7 @@ namespace Oxide.Plugins
         {
             public override void WriteJson(JsonWriter writer, object value, JsonSerializer serializer)
             {
-                Vector3 vector =(Vector3)value;
+                Vector3 vector = (Vector3)value;
                 writer.WriteValue($"{vector.x} {vector.y} {vector.z}");
             }
 
@@ -3399,7 +3395,8 @@ namespace Oxide.Plugins
                             Command = command + text,
                             FontSize = size,
                             IsPassword = false,
-                            Text = text
+                            Text = text,
+                            NeedsKeyboard = true
                         },
                         new CuiRectTransformComponent { AnchorMin = min, AnchorMax = max },
                         new CuiNeedsCursorComponent()
@@ -3503,13 +3500,13 @@ namespace Oxide.Plugins
             if (player.net?.connection != null) player.ClientRPCPlayer(null, player, "StartLoading");
         }
 
-//        private void StartSleeping(BasePlayer player)
-//        {
-//            if (player.IsSleeping()) return;
-//            player.SetPlayerFlag(BasePlayer.PlayerFlags.Sleeping, true);
-//            if (!BasePlayer.sleepingPlayerList.Contains(player)) BasePlayer.sleepingPlayerList.Add(player);
-//            player.CancelInvoke("InventoryUpdate");
-//        }
+        //        private void StartSleeping(BasePlayer player)
+        //        {
+        //            if (player.IsSleeping()) return;
+        //            player.SetPlayerFlag(BasePlayer.PlayerFlags.Sleeping, true);
+        //            if (!BasePlayer.sleepingPlayerList.Contains(player)) BasePlayer.sleepingPlayerList.Add(player);
+        //            player.CancelInvoke("InventoryUpdate");
+        //        }
 
         public static Vector3 StringToVector3(string sVector)
         {
@@ -3565,16 +3562,11 @@ namespace Oxide.Plugins
 
         private void FindMonuments()
         {
-            Vector3 extents = Vector3.zero;
-            float realWidth = 0f;
-            string name = null;
-
             foreach (MonumentInfo monument in UnityEngine.Object.FindObjectsOfType<MonumentInfo>())
             {
                 if (monument.name.Contains("power_sub")) continue;
-                realWidth = 0f;
-                name = null;
-
+                float realWidth = 0f;
+                string name = string.Empty;
                 if (monument.name == "OilrigAI")
                 {
                     name = "Small Oilrig";
@@ -3585,6 +3577,11 @@ namespace Oxide.Plugins
                     name = "Large Oilrig";
                     realWidth = 200f;
                 }
+                else if (monument.name == "assets/bundled/prefabs/autospawn/monument/medium/radtown_small_3.prefab")
+                {
+                    name = "Sewer Branch";
+                    realWidth = 100;
+                }
                 else
                 {
                     name = Regex.Match(monument.name, @"\w{6}\/(.+\/)(.+)\.(.+)").Groups[2].Value.Replace("_", " ").Replace(" 1", "").Titleize();
@@ -3592,7 +3589,7 @@ namespace Oxide.Plugins
                 if (monPos.ContainsKey(name)) continue;
                 if (cavePos.ContainsKey(name)) name += RandomString();
 
-                extents = monument.Bounds.extents;
+                Vector3 extents = monument.Bounds.extents;
                 if (realWidth > 0f)
                 {
                     extents.z = realWidth;
