@@ -37,7 +37,7 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("Humanoids", "RFC1920", "1.3.1")]
+    [Info("Humanoids", "RFC1920", "1.3.2")]
     [Description("Adds interactive NPCs which can be modded by other plugins")]
     internal class Humanoids : RustPlugin
     {
@@ -126,6 +126,7 @@ namespace Oxide.Plugins
                 ["new"] = "Create New",
                 ["remove"] = "Remove",
                 ["spawnhere"] = "Spawn Here",
+                ["spawnedat"] = "New NPC Spawned at {0} ({1})",
                 ["tpto"] = "Teleport to NPC",
                 ["name"] = "Name",
                 ["online"] = "Online",
@@ -575,10 +576,21 @@ namespace Oxide.Plugins
                     case "spawn":
                     case "create":
                     case "new":
-                        HumanoidInfo npc = new HumanoidInfo(0, player.transform.position, player.transform.rotation);
-                        ulong x;
-                        SpawnNPC(npc, out x);
-                        NPCSelectGUI(player);
+                        if (player?.transform != null)
+                        {
+                            HumanoidInfo npc = new HumanoidInfo(0, player.transform.position, player.transform.rotation);
+                            ulong x;
+                            SpawnNPC(npc, out x);
+                            Message(iplayer, "spawnedat", player.transform.position.ToString(), x.ToString());
+                            NPCSelectGUI(player);
+                        }
+                        else
+                        {
+                            HumanoidInfo npc = new HumanoidInfo(0, Vector3.zero, new Quaternion());
+                            ulong x;
+                            SpawnNPC(npc, out x);
+                            Message(iplayer, "spawnedat", Vector3.zero.ToString(), x.ToString());
+                        }
                         break;
                     case "edit":
                         {
@@ -709,7 +721,7 @@ namespace Oxide.Plugins
                         {
                             CuiHelper.DestroyUi(player, NPCGUK);
                             ulong userid = ulong.Parse(args[1]);
-                            npc = npcs[userid];
+                            HumanoidInfo npc = npcs[userid];
                             npc.kit = args[2];
                             HumanoidPlayer hp = FindHumanoidByID(userid);
                             SaveData();
@@ -722,7 +734,7 @@ namespace Oxide.Plugins
                         {
                             CuiHelper.DestroyUi(player, NPCGUM);
                             ulong userid = ulong.Parse(args[1]);
-                            npc = npcs[userid];
+                            HumanoidInfo npc = npcs[userid];
                             switch (args[3])
                             {
                                 case "end":
@@ -743,7 +755,7 @@ namespace Oxide.Plugins
                         {
                             CuiHelper.DestroyUi(player, NPCGUR);
                             ulong userid = ulong.Parse(args[1]);
-                            npc = npcs[userid];
+                            HumanoidInfo npc = npcs[userid];
                             npc.roadname = args[2] + " " + args[3];
                             HumanoidPlayer hp = FindHumanoidByID(userid);
                             SaveData();
@@ -756,7 +768,7 @@ namespace Oxide.Plugins
                         {
                             CuiHelper.DestroyUi(player, NPCGUL);
                             ulong userid = ulong.Parse(args[1]);
-                            npc = npcs[userid];
+                            HumanoidInfo npc = npcs[userid];
                             LocoMode locomode;
                             Enum.TryParse(args[2], out locomode);
                             npc.locomode = locomode;
