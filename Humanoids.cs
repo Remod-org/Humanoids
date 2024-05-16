@@ -37,7 +37,7 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("Humanoids", "RFC1920", "1.3.2")]
+    [Info("Humanoids", "RFC1920", "1.3.3")]
     [Description("Adds interactive NPCs which can be modded by other plugins")]
     internal class Humanoids : RustPlugin
     {
@@ -2427,7 +2427,7 @@ namespace Oxide.Plugins
                     mountable.MountPlayer(npc.player);
                     npc.player.OverrideViewAngles(mountable.mountAnchor.transform.rotation.eulerAngles);
                     npc.player.eyes.NetworkUpdate(mountable.mountAnchor.transform.rotation);
-                    npc.player.ClientRPCPlayer(null, npc.player, "ForcePositionTo", npc.player.transform.position);
+                    npc.player.ClientRPC(RpcTarget.Player("ForcePositionTo", npc.player), npc.player.transform.position);
                     //mountable.SetFlag(BaseEntity.Flags.Busy, true, false);
                     sitting = true;
                     break;
@@ -2716,7 +2716,7 @@ namespace Oxide.Plugins
             //public void UpdateWaypoints()
             //{
             //    if (string.IsNullOrEmpty(npc.info.waypoint)) return;
-            //    object cwaypoints = Interface.Oxide.CallHook("GetWaypointsList", npc.info.waypoint);
+            //    object cwaypoints = Interface.GetMod().CallHook("GetWaypointsList", npc.info.waypoint);
             //    if (cwaypoints == null)
             //    {
             //        cachedWaypoints = null;
@@ -3509,7 +3509,7 @@ namespace Oxide.Plugins
             player.StartSleeping();
             player.SendNetworkUpdateImmediate(false);
 
-            if (player.net?.connection != null) player.ClientRPCPlayer(null, player, "StartLoading");
+            if (player.net?.connection != null) player.ClientRPC(RpcTarget.Player("StartLoading", player));
         }
 
         //        private void StartSleeping(BasePlayer player)
