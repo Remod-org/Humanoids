@@ -37,7 +37,7 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("Humanoids", "RFC1920", "1.3.3")]
+    [Info("Humanoids", "RFC1920", "1.3.4")]
     [Description("Adds interactive NPCs which can be modded by other plugins")]
     internal class Humanoids : RustPlugin
     {
@@ -756,7 +756,14 @@ namespace Oxide.Plugins
                             CuiHelper.DestroyUi(player, NPCGUR);
                             ulong userid = ulong.Parse(args[1]);
                             HumanoidInfo npc = npcs[userid];
-                            npc.roadname = args[2] + " " + args[3];
+                            if (args[2] == "none")
+                            {
+                                npc.roadname = null;
+                            }
+                            else
+                            {
+                                npc.roadname = args[2] + " " + args[3];
+                            }
                             HumanoidPlayer hp = FindHumanoidByID(userid);
                             SaveData();
                             RespawnNPC(hp.player);
@@ -1437,7 +1444,12 @@ namespace Oxide.Plugins
             int row = 0;
 
             if (road == null) road = Lang("none");
-            foreach (KeyValuePair<string, Road> roadinfo in roads)
+            Dictionary<string, Road> roadsel = new Dictionary<string, Road>(roads)
+            {
+                { Lang("none"), null }
+            };
+
+            foreach (KeyValuePair<string, Road> roadinfo in roadsel)
             {
                 DoLog(roadinfo.Key);
                 if (row > 10)
@@ -2624,8 +2636,34 @@ namespace Oxide.Plugins
                 {
                     riding = false;
                     npc.player.SetParent(null, true, true);
+                }
+
+                Bike bike = npc.player.GetMountedVehicle() as Bike;
+                if (bike == null)
+                {
+                    // Find a place to sit
+                    List<Bike> bikes = new List<Bike>();
+                    Vis.Entities(npc.info.loc, 15f, bikes);
+                    foreach (Bike mountable in bikes.Distinct().ToList())
+                    {
+                        if (mountable?.GetMounted() != null)
+                        {
+                            continue;
+                        }
+                        mountable?.AttemptMount(npc.player);
+                        npc.player.SetParent(mountable, true, true);
+                        riding = true;
+                        break;
+                    }
+                }
+
+                if (bike == null)
+                {
+                    riding = false;
+                    npc.player.SetParent(null, true, true);
                     return;
                 }
+
                 Vector3 targetDir;
                 Vector3 targetLoc;
                 Vector3 targetHorsePos = new Vector3();
