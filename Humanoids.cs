@@ -37,7 +37,7 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("Humanoids", "RFC1920", "1.3.4")]
+    [Info("Humanoids", "RFC1920", "1.3.5")]
     [Description("Adds interactive NPCs which can be modded by other plugins")]
     internal class Humanoids : RustPlugin
     {
@@ -997,11 +997,11 @@ namespace Oxide.Plugins
                     hp.info.canmove = hp.info.cansit;
                     hp.info.locomode = LocoMode.Sit;
                     break;
-                case "canride":
-                    hp.info.canride = !GetBoolValue(data);
-                    hp.info.canmove = hp.info.canride;
-                    hp.info.locomode = LocoMode.Ride;
-                    break;
+                //case "canride":
+                //    hp.info.canride = !GetBoolValue(data);
+                //    hp.info.canmove = hp.info.canride;
+                //    hp.info.locomode = LocoMode.Ride;
+                //    break;
                 case "needsammo":
                 case "needsAmmo":
                     hp.info.needsammo = !GetBoolValue(data);
@@ -1043,9 +1043,9 @@ namespace Oxide.Plugins
                         case 8:
                             hp.info.locomode = LocoMode.Road;
                             break;
-                        case 16:
-                            hp.info.locomode = LocoMode.Ride;
-                            break;
+                        //case 16:
+                        //    hp.info.locomode = LocoMode.Ride;
+                        //    break;
                         case 32:
                             hp.info.locomode = LocoMode.Monument;
                             break;
@@ -1280,18 +1280,18 @@ namespace Oxide.Plugins
                             UI.Label(ref container, NPCGUI, UI.Color("#ffffff", 1f), Lang("none"), 12, $"{posb[0]} {posb[1]}", $"{posb[0] + ((posb[2] - posb[0]) / 2)} {posb[3]}");
                         }
                     }
-                    else if (info.Key == "roadname" && (npcs[npc].locomode == LocoMode.Road || npcs[npc].locomode == LocoMode.Ride))
-                    {
-                        if (plugins.Exists("RoadFinder"))
-                        {
-                            string roadname = info.Value ?? Lang("none");
-                            UI.Button(ref container, NPCGUI, UI.Color("#d85540", 1f), roadname, 12, $"{posb[0]} {posb[1]}", $"{posb[0] + ((posb[2] - posb[0]) / 2)} {posb[3]}", $"noid npcselroad {npc} {roadname}");
-                        }
-                        else
-                        {
-                            UI.Label(ref container, NPCGUI, UI.Color("#ffffff", 1f), Lang("none"), 12, $"{posb[0]} {posb[1]}", $"{posb[0] + ((posb[2] - posb[0]) / 2)} {posb[3]}");
-                        }
-                    }
+                    //else if (info.Key == "roadname" && (npcs[npc].locomode == LocoMode.Road || npcs[npc].locomode == LocoMode.Ride))
+                    //{
+                    //    if (plugins.Exists("RoadFinder"))
+                    //    {
+                    //        string roadname = info.Value ?? Lang("none");
+                    //        UI.Button(ref container, NPCGUI, UI.Color("#d85540", 1f), roadname, 12, $"{posb[0]} {posb[1]}", $"{posb[0] + ((posb[2] - posb[0]) / 2)} {posb[3]}", $"noid npcselroad {npc} {roadname}");
+                    //    }
+                    //    else
+                    //    {
+                    //        UI.Label(ref container, NPCGUI, UI.Color("#ffffff", 1f), Lang("none"), 12, $"{posb[0]} {posb[1]}", $"{posb[0] + ((posb[2] - posb[0]) / 2)} {posb[3]}");
+                    //    }
+                    //}
                     else if (info.Key == "monstart" && npcs[npc].locomode == LocoMode.Monument)
                     {
                         string monname = info.Value ?? Lang("none");
@@ -1714,7 +1714,7 @@ namespace Oxide.Plugins
             Sit = 2,
             Stand = 4,
             Road = 8,
-            Ride = 16,
+            //Ride = 16,
             Monument = 32,
             Defend = 64,
             Gather = 128
@@ -1919,12 +1919,12 @@ namespace Oxide.Plugins
                         npc.info.canmove = true;
                         Sit();
                         break;
-                    case LocoMode.Ride:
-                        npc.info.cansit = false;
-                        npc.info.canride = true;
-                        npc.info.canmove = true;
-                        Ride();
-                        break;
+                    //case LocoMode.Ride:
+                    //    npc.info.cansit = false;
+                    //    npc.info.canride = true;
+                    //    npc.info.canmove = true;
+                    //    Ride();
+                    //    break;
                     case LocoMode.Follow:
                         npc.info.cansit = false;
                         npc.info.canride = false;
@@ -2610,146 +2610,146 @@ namespace Oxide.Plugins
                 }
             }
 
-            public void Ride()
-            {
-                if (!npc.info.canride) return;
-                RidableHorse horse = npc.player.GetMountedVehicle() as RidableHorse;
-                if (horse == null)
-                {
-                    // Find a place to sit
-                    List<RidableHorse> horses = new List<RidableHorse>();
-                    Vis.Entities(npc.info.loc, 15f, horses);
-                    foreach (RidableHorse mountable in horses.Distinct().ToList())
-                    {
-                        if (mountable.GetMounted() != null)
-                        {
-                            continue;
-                        }
-                        mountable.AttemptMount(npc.player);
-                        npc.player.SetParent(mountable, true, true);
-                        riding = true;
-                        break;
-                    }
-                }
+            //public void Ride()
+            //{
+            //    if (!npc.info.canride) return;
+            //    RidableHorse horse = npc.player?.GetMountedVehicle() as RidableHorse;
+            //    if (horse == null)
+            //    {
+            //        // Find a place to sit
+            //        List<RidableHorse> horses = new List<RidableHorse>();
+            //        Vis.Entities(npc.info.loc, 15f, horses);
+            //        foreach (RidableHorse mountable in horses.Distinct().ToList())
+            //        {
+            //            if (mountable?.GetMounted() != null)
+            //            {
+            //                continue;
+            //            }
+            //            mountable?.AttemptMount(npc.player);
+            //            npc.player.SetParent(mountable, true, true);
+            //            riding = true;
+            //            break;
+            //        }
+            //    }
 
-                if (horse == null)
-                {
-                    riding = false;
-                    npc.player.SetParent(null, true, true);
-                }
+            //    if (horse == null)
+            //    {
+            //        riding = false;
+            //        npc.player.SetParent(null, true, true);
+            //    }
 
-                Bike bike = npc.player.GetMountedVehicle() as Bike;
-                if (bike == null)
-                {
-                    // Find a place to sit
-                    List<Bike> bikes = new List<Bike>();
-                    Vis.Entities(npc.info.loc, 15f, bikes);
-                    foreach (Bike mountable in bikes.Distinct().ToList())
-                    {
-                        if (mountable?.GetMounted() != null)
-                        {
-                            continue;
-                        }
-                        mountable?.AttemptMount(npc.player);
-                        npc.player.SetParent(mountable, true, true);
-                        riding = true;
-                        break;
-                    }
-                }
+            //    Bike bike = npc.player?.GetMountedVehicle() as Bike;
+            //    if (bike == null)
+            //    {
+            //        // Find a place to sit
+            //        List<Bike> bikes = new List<Bike>();
+            //        Vis.Entities(npc.info.loc, 15f, bikes);
+            //        foreach (Bike mountable in bikes.Distinct().ToList())
+            //        {
+            //            if (mountable?.GetMounted() != null)
+            //            {
+            //                continue;
+            //            }
+            //            mountable?.AttemptMount(npc.player);
+            //            npc.player.SetParent(mountable, true, true);
+            //            riding = true;
+            //            break;
+            //        }
+            //    }
 
-                if (bike == null)
-                {
-                    riding = false;
-                    npc.player.SetParent(null, true, true);
-                    return;
-                }
+            //    if (bike == null)
+            //    {
+            //        riding = false;
+            //        npc.player.SetParent(null, true, true);
+            //        return;
+            //    }
 
-                Vector3 targetDir;
-                Vector3 targetLoc;
-                Vector3 targetHorsePos = new Vector3();
-                float distance;
-                bool rand = true;
+            //    Vector3 targetDir;
+            //    Vector3 targetLoc;
+            //    Vector3 targetHorsePos = new Vector3();
+            //    float distance;
+            //    bool rand = true;
 
-                if (npc.target != null)
-                {
-                    distance = Vector3.Distance(npc.info.loc, npc.target.transform.position);
-                    targetDir = npc.target.transform.position;
-                }
-                else
-                {
-                    distance = Vector3.Distance(npc.info.loc, npc.info.targetloc);
-                    targetDir = npc.info.targetloc - horse.transform.position;
-                    //rand = true;
-                }
+            //    if (npc.target != null)
+            //    {
+            //        distance = Vector3.Distance(npc.info.loc, npc.target.transform.position);
+            //        targetDir = npc.target.transform.position;
+            //    }
+            //    else
+            //    {
+            //        distance = Vector3.Distance(npc.info.loc, npc.info.targetloc);
+            //        targetDir = npc.info.targetloc - horse.transform.position;
+            //        //rand = true;
+            //    }
 
-                bool hasMoved = targetDir != Vector3.zero && Vector3.Distance(horse.transform.position, npc.info.loc) > 0.5f;
-                BasePlayer ptarget = npc.target as BasePlayer;
-                //bool isVisible = ptarget == null ? false : npc.target?.IsVisible(npc.player.eyes.position, ptarget.eyes.position, 200) == true;
-                bool isVisible = ptarget != null && npc.target?.IsVisible(npc.player.eyes.position, ptarget.eyes.position, 200) == true;
-                Vector2 randompos = UnityEngine.Random.insideUnitCircle * npc.info.damageDistance;
-                // Needs work:
-                if (npc.target != null)
-                {
-                    if (isVisible)
-                    {
-                        targetLoc = npc.target.transform.position;
-                        rand = false;
-                    }
-                    else if (Vector3.Distance(npc.info.loc, targetHorsePos) > 10 && !hasMoved)
-                    {
-                        npc.target = null;
-                        targetLoc = new Vector3(randompos.x, 0, randompos.y);
-                        targetLoc += npc.info.spawnloc;
-                    }
-                    else
-                    {
-                        targetLoc = npc.target.transform.position;
-                    }
-                }
-                else
-                {
-                    if (Vector3.Distance(npc.player.transform.position, targetHorsePos) > 10 && hasMoved)
-                    {
-                    }
-                    else
-                    {
-                        targetLoc = new Vector3(randompos.x, 0, randompos.y);
-                        targetLoc += npc.player.transform.position;
-                    }
-                }
+            //    bool hasMoved = targetDir != Vector3.zero && Vector3.Distance(horse.transform.position, npc.info.loc) > 0.5f;
+            //    BasePlayer ptarget = npc.target as BasePlayer;
+            //    //bool isVisible = ptarget == null ? false : npc.target?.IsVisible(npc.player.eyes.position, ptarget.eyes.position, 200) == true;
+            //    bool isVisible = ptarget != null && npc.target?.IsVisible(npc.player.eyes.position, ptarget.eyes.position, 200) == true;
+            //    Vector2 randompos = UnityEngine.Random.insideUnitCircle * npc.info.damageDistance;
+            //    // Needs work:
+            //    if (npc.target != null)
+            //    {
+            //        if (isVisible)
+            //        {
+            //            targetLoc = npc.target.transform.position;
+            //            rand = false;
+            //        }
+            //        else if (Vector3.Distance(npc.info.loc, targetHorsePos) > 10 && !hasMoved)
+            //        {
+            //            npc.target = null;
+            //            targetLoc = new Vector3(randompos.x, 0, randompos.y);
+            //            targetLoc += npc.info.spawnloc;
+            //        }
+            //        else
+            //        {
+            //            targetLoc = npc.target.transform.position;
+            //        }
+            //    }
+            //    else
+            //    {
+            //        if (Vector3.Distance(npc.player.transform.position, targetHorsePos) > 10 && hasMoved)
+            //        {
+            //        }
+            //        else
+            //        {
+            //            targetLoc = new Vector3(randompos.x, 0, randompos.y);
+            //            targetLoc += npc.player.transform.position;
+            //        }
+            //    }
 
-                float angle = Vector3.SignedAngle(targetDir, horse.transform.forward, Vector3.up);
-                //float angle = Vector3.SignedAngle(npc.player.transform.forward, targetDir, Vector3.forward);
-                //float angle = Vector3.SignedAngle(targetDir, horse.transform.forward, Vector3.forward);
-                RideMove(horse, distance, angle, rand);
-            }
+            //    float angle = Vector3.SignedAngle(targetDir, horse.transform.forward, Vector3.up);
+            //    //float angle = Vector3.SignedAngle(npc.player.transform.forward, targetDir, Vector3.forward);
+            //    //float angle = Vector3.SignedAngle(targetDir, horse.transform.forward, Vector3.forward);
+            //    //RideMove(horse, distance, angle, rand);
+            //}
 
-            private void RideMove(RidableHorse horse, float distance, float angle, bool rand)
-            {
-                InputMessage message = new InputMessage() { buttons = 0 };
-                if (distance > npc.info.damageDistance)
-                {
-                    message.buttons = 2; // FORWARD
-                }
-                if (distance > 40 && !rand)
-                {
-                    message.buttons = 130; // SPRINT FORWARD
-                }
-                if (horse.currentRunState == BaseRidableAnimal.RunState.sprint && distance < npc.info.maxDistance)
-                {
-                    message.buttons = 0; // STOP ?
-                }
-                if (angle > 30 && angle < 180)
-                {
-                    message.buttons += 8; // LEFT
-                }
-                if (angle < -30 && angle > -180)
-                {
-                    message.buttons += 16; // RIGHT
-                }
+            //private void RideMove(RidableHorse horse, float distance, float angle, bool rand)
+            //{
+            //    InputMessage message = new InputMessage() { buttons = 0 };
+            //    if (distance > npc.info.damageDistance)
+            //    {
+            //        message.buttons = 2; // FORWARD
+            //    }
+            //    if (distance > 40 && !rand)
+            //    {
+            //        message.buttons = 130; // SPRINT FORWARD
+            //    }
+            //    if (horse.currentRunState == BaseRidableAnimal.RunState.sprint && distance < npc.info.maxDistance)
+            //    {
+            //        message.buttons = 0; // STOP ?
+            //    }
+            //    if (angle > 30 && angle < 180)
+            //    {
+            //        message.buttons += 8; // LEFT
+            //    }
+            //    if (angle < -30 && angle > -180)
+            //    {
+            //        message.buttons += 16; // RIGHT
+            //    }
 
-                horse.RiderInput(new InputState() { current = message }, npc.player);
-            }
+            //    horse.RiderInput(new InputState() { current = message }, npc.player);
+            //}
 
             //public void UpdateWaypoints()
             //{
@@ -2921,12 +2921,12 @@ namespace Oxide.Plugins
 
             public bool IsLayerBlocked(Vector3 position, float radius, int mask)
             {
-                List<Collider> colliders = Pool.GetList<Collider>();
+                List<Collider> colliders = Pool.Get<List<Collider>>();
                 Vis.Colliders(position, radius, colliders, mask, QueryTriggerInteraction.Collide);
 
                 bool blocked = colliders.Count > 0;
 
-                Pool.FreeList(ref colliders);
+                Pool.FreeUnmanaged(ref colliders);
 
                 return blocked;
             }
