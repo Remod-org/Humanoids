@@ -279,8 +279,6 @@ namespace Oxide.Plugins
                 obj.movement.Stand();
                 obj.GetComponent<BasePlayer>().Kill();
             }
-
-            //SaveData();
         }
 
         private void LoadData()
