@@ -37,7 +37,7 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("Humanoids", "RFC1920", "1.3.5")]
+    [Info("Humanoids", "RFC1920", "1.3.6")]
     [Description("Adds interactive NPCs which can be modded by other plugins")]
     internal class Humanoids : RustPlugin
     {
@@ -49,8 +49,8 @@ namespace Oxide.Plugins
 
         private DynamicConfigFile data;
         private ConfigData configData;
-        public static Dictionary<string, AmmoTypes> ammoTypes = new Dictionary<string, AmmoTypes>();
-        private List<ulong> isopen = new List<ulong>();
+        public static Dictionary<string, AmmoTypes> ammoTypes = new();
+        private List<ulong> isopen = new();
 
         private const string permNPCGuiUse = "humanoid.use";
         private const string NPCGUI = "npc.editor";
@@ -61,21 +61,21 @@ namespace Oxide.Plugins
         private const string NPCGUR = "npc.roadselect";
         private const string NPCGUS = "npc.select";
         private const string NPCGUV = "npc.setval";
-        private readonly List<string> guis = new List<string>() { NPCGUI, NPCGUK, NPCGUL, NPCGUM, NPCGUN, NPCGUR, NPCGUS, NPCGUV };
+        private readonly List<string> guis = new() { NPCGUI, NPCGUK, NPCGUL, NPCGUM, NPCGUN, NPCGUR, NPCGUS, NPCGUV };
 
         private bool newsave;
 
         public static Humanoids Instance;
-        private static Dictionary<ulong, HumanoidInfo> npcs = new Dictionary<ulong, HumanoidInfo>();
+        private static Dictionary<ulong, HumanoidInfo> npcs = new();
 
         // This is critical to the speed of operations on FindHumanoidByID/Name
-        private Dictionary<ulong, HumanoidPlayer> hpcacheid = new Dictionary<ulong, HumanoidPlayer>();
-        private Dictionary<string, HumanoidPlayer> hpcachenm = new Dictionary<string, HumanoidPlayer>();
+        private Dictionary<ulong, HumanoidPlayer> hpcacheid = new();
+        private Dictionary<string, HumanoidPlayer> hpcachenm = new();
 
-        private static Dictionary<string, Road> roads = new Dictionary<string, Road>();
-        private static SortedDictionary<string, Vector3> monPos = new SortedDictionary<string, Vector3>();
-        private static SortedDictionary<string, Vector3> monSize = new SortedDictionary<string, Vector3>();
-        private static SortedDictionary<string, Vector3> cavePos = new SortedDictionary<string, Vector3>();
+        private static Dictionary<string, Road> roads = new();
+        private static SortedDictionary<string, Vector3> monPos = new();
+        private static SortedDictionary<string, Vector3> monSize = new();
+        private static SortedDictionary<string, Vector3> cavePos = new();
 
         private static Vector3 Vector3Down;
         private readonly static int playerMask = LayerMask.GetMask("Player (Server)");
@@ -161,7 +161,7 @@ namespace Oxide.Plugins
                 UnityEngine.Object.Destroy(obj);
             }
 
-            Dictionary<ulong, HumanoidInfo> tmpnpcs = new Dictionary<ulong, HumanoidInfo>(npcs);
+            Dictionary<ulong, HumanoidInfo> tmpnpcs = new(npcs);
             foreach (KeyValuePair<ulong, HumanoidInfo> npc in tmpnpcs)
             {
                 if (npc.Value.userid == 0) continue;
@@ -202,9 +202,9 @@ namespace Oxide.Plugins
                 DoLog("OnTownSet called!");
 
                 BuildingPrivlidge bp = null;
-                List<BaseEntity> entities = new List<BaseEntity>();
-                List<BaseEntity> frames = new List<BaseEntity>();
-                List<ulong> processedNPCs = new List<ulong>();
+                List<BaseEntity> entities = new();
+                List<BaseEntity> frames = new();
+                List<ulong> processedNPCs = new();
 
                 Vis.Entities(location, 100f, entities);
                 foreach (BaseEntity entity in entities.OrderBy(x => Vector3.Distance(location, x.transform.position)))
@@ -299,7 +299,7 @@ namespace Oxide.Plugins
 
         private void SaveData()
         {
-            Dictionary<ulong, HumanoidInfo> tmpnpcs = new Dictionary<ulong, HumanoidInfo>();
+            Dictionary<ulong, HumanoidInfo> tmpnpcs = new();
             foreach (KeyValuePair<ulong, HumanoidInfo> x in npcs)
             {
                 if (!x.Value.ephemeral)
@@ -576,7 +576,7 @@ namespace Oxide.Plugins
                     case "new":
                         if (player?.transform != null)
                         {
-                            HumanoidInfo npc = new HumanoidInfo(0, player.transform.position, player.transform.rotation);
+                            HumanoidInfo npc = new(0, player.transform.position, player.transform.rotation);
                             ulong x;
                             SpawnNPC(npc, out x);
                             Message(iplayer, "spawnedat", player.transform.position.ToString(), x.ToString());
@@ -584,7 +584,7 @@ namespace Oxide.Plugins
                         }
                         else
                         {
-                            HumanoidInfo npc = new HumanoidInfo(0, Vector3.zero, new Quaternion());
+                            HumanoidInfo npc = new(0, Vector3.zero, new Quaternion());
                             ulong x;
                             SpawnNPC(npc, out x);
                             Message(iplayer, "spawnedat", Vector3.zero.ToString(), x.ToString());
@@ -603,7 +603,7 @@ namespace Oxide.Plugins
                                 }
                                 else
                                 {
-                                    List<string> newarg = new List<string>(args);
+                                    List<string> newarg = new(args);
                                     newarg.RemoveAt(0);
                                     string nom = string.Join(" ", newarg);
                                     foreach (KeyValuePair<ulong, HumanoidInfo> pls in npcs)
@@ -885,7 +885,7 @@ namespace Oxide.Plugins
             }
 
             ulong npcid = 0;
-            HumanoidInfo hi = new HumanoidInfo(npcid, position, currentRot)
+            HumanoidInfo hi = new(npcid, position, currentRot)
             {
                 displayName = name,
                 ephemeral = ephemeral
@@ -995,11 +995,11 @@ namespace Oxide.Plugins
                     hp.info.canmove = hp.info.cansit;
                     hp.info.locomode = LocoMode.Sit;
                     break;
-                //case "canride":
-                //    hp.info.canride = !GetBoolValue(data);
-                //    hp.info.canmove = hp.info.canride;
-                //    hp.info.locomode = LocoMode.Ride;
-                //    break;
+                case "canride":
+                    hp.info.canride = !GetBoolValue(data);
+                    hp.info.canmove = hp.info.canride;
+                    hp.info.locomode = LocoMode.Ride;
+                    break;
                 case "needsammo":
                 case "needsAmmo":
                     hp.info.needsammo = !GetBoolValue(data);
@@ -1041,9 +1041,9 @@ namespace Oxide.Plugins
                         case 8:
                             hp.info.locomode = LocoMode.Road;
                             break;
-                        //case 16:
-                        //    hp.info.locomode = LocoMode.Ride;
-                        //    break;
+                        case 16:
+                            hp.info.locomode = LocoMode.Ride;
+                            break;
                         case 32:
                             hp.info.locomode = LocoMode.Monument;
                             break;
@@ -1190,7 +1190,7 @@ namespace Oxide.Plugins
             }
             else
             {
-                Dictionary<string, string> npcinfo = new Dictionary<string, string>
+                Dictionary<string, string> npcinfo = new()
                 {
                     { "displayName", npcs[npc].displayName },
                     { "kit", npcs[npc].kit },
@@ -1223,7 +1223,7 @@ namespace Oxide.Plugins
                     { "monend",  npcs[npc].monend },
                     { "speed",  npcs[npc].speed.ToString() }
                 };
-                Dictionary<string, bool> isBool = new Dictionary<string, bool>
+                Dictionary<string, bool> isBool = new()
                 {
                     { "enable", true },
                     { "invulnerable", true },
@@ -1242,7 +1242,7 @@ namespace Oxide.Plugins
                     { "dropWeapon", true },
                     { "entrypause", true }
                 };
-                Dictionary<string, bool> isLarge = new Dictionary<string, bool>
+                Dictionary<string, bool> isLarge = new()
                 {
                     { "hello", true },
                     { "bye", true },
@@ -1278,18 +1278,18 @@ namespace Oxide.Plugins
                             UI.Label(ref container, NPCGUI, UI.Color("#ffffff", 1f), Lang("none"), 12, $"{posb[0]} {posb[1]}", $"{posb[0] + ((posb[2] - posb[0]) / 2)} {posb[3]}");
                         }
                     }
-                    //else if (info.Key == "roadname" && (npcs[npc].locomode == LocoMode.Road || npcs[npc].locomode == LocoMode.Ride))
-                    //{
-                    //    if (plugins.Exists("RoadFinder"))
-                    //    {
-                    //        string roadname = info.Value ?? Lang("none");
-                    //        UI.Button(ref container, NPCGUI, UI.Color("#d85540", 1f), roadname, 12, $"{posb[0]} {posb[1]}", $"{posb[0] + ((posb[2] - posb[0]) / 2)} {posb[3]}", $"noid npcselroad {npc} {roadname}");
-                    //    }
-                    //    else
-                    //    {
-                    //        UI.Label(ref container, NPCGUI, UI.Color("#ffffff", 1f), Lang("none"), 12, $"{posb[0]} {posb[1]}", $"{posb[0] + ((posb[2] - posb[0]) / 2)} {posb[3]}");
-                    //    }
-                    //}
+                    else if (info.Key == "roadname" && (npcs[npc].locomode == LocoMode.Road || npcs[npc].locomode == LocoMode.Ride))
+                    {
+                        if (plugins.Exists("RoadFinder"))
+                        {
+                            string roadname = info.Value ?? Lang("none");
+                            UI.Button(ref container, NPCGUI, UI.Color("#d85540", 1f), roadname, 12, $"{posb[0]} {posb[1]}", $"{posb[0] + ((posb[2] - posb[0]) / 2)} {posb[3]}", $"noid npcselroad {npc} {roadname}");
+                        }
+                        else
+                        {
+                            UI.Label(ref container, NPCGUI, UI.Color("#ffffff", 1f), Lang("none"), 12, $"{posb[0]} {posb[1]}", $"{posb[0] + ((posb[2] - posb[0]) / 2)} {posb[3]}");
+                        }
+                    }
                     else if (info.Key == "monstart" && npcs[npc].locomode == LocoMode.Monument)
                     {
                         string monname = info.Value ?? Lang("none");
@@ -1402,7 +1402,7 @@ namespace Oxide.Plugins
             int row = 0;
 
             if (kit == null) kit = Lang("none");
-            List<string> kits = new List<string>();
+            List<string> kits = new();
             Kits?.CallHook("GetKitNames", kits);
             foreach (string kitinfo in kits)
             {
@@ -1442,7 +1442,7 @@ namespace Oxide.Plugins
             int row = 0;
 
             if (road == null) road = Lang("none");
-            Dictionary<string, Road> roadsel = new Dictionary<string, Road>(roads)
+            Dictionary<string, Road> roadsel = new(roads)
             {
                 { Lang("none"), null }
             };
@@ -1508,7 +1508,7 @@ namespace Oxide.Plugins
         #region utility
         public static IEnumerable<TValue> RandomValues<TKey, TValue>(IDictionary<TKey, TValue> dict)
         {
-            System.Random rand = new System.Random();
+            System.Random rand = new();
             List<TValue> values = dict.Values.ToList();
             int size = dict.Count;
             while (true)
@@ -1621,7 +1621,7 @@ namespace Oxide.Plugins
 
         private void KillNpc(BasePlayer player)
         {
-            List<BasePlayer> players = new List<BasePlayer>();
+            List<BasePlayer> players = new();
             Vis.Entities(player.transform.position, 0.01f, players);
             foreach (BasePlayer pl in players)
             {
@@ -1636,7 +1636,7 @@ namespace Oxide.Plugins
             {
                 info.userid = (ulong)UnityEngine.Random.Range(0, 2147483647);
             }
-            List<BasePlayer> lurkers = new List<BasePlayer>();
+            List<BasePlayer> lurkers = new();
             Vis.Entities(info.loc, 1, lurkers);
             foreach (BasePlayer lurker in lurkers)
             {
@@ -1712,7 +1712,7 @@ namespace Oxide.Plugins
             Sit = 2,
             Stand = 4,
             Road = 8,
-            //Ride = 16,
+            Ride = 16,
             Monument = 32,
             Defend = 64,
             Gather = 128
@@ -1724,7 +1724,7 @@ namespace Oxide.Plugins
             public ulong userid;
             public string displayName;
             public string kit;
-            public Dictionary<DamageType, float> protections = new Dictionary<DamageType, float>();
+            public Dictionary<DamageType, float> protections = new();
             public Timer pausetimer;
 
             // Logic
@@ -1809,13 +1809,13 @@ namespace Oxide.Plugins
         {
             private HumanoidPlayer npc;
             //private Humanoid_Pathing spf;
-            public List<Vector3> Paths = new List<Vector3>();
-            public Vector3 StartPos = new Vector3(0f, 0f, 0f);
-            public Vector3 LastPos = new Vector3(0f, 0f, 0f);
-            public Vector3 followPos = new Vector3(0f, 0f, 0f);
-            public Vector3 lastPos = new Vector3(0f, 0f, 0f);
-            public Vector3 nextPos = new Vector3(0f, 0f, 0f);
-            private Vector3 currPos = new Vector3(0f, 0f, 0f);
+            public List<Vector3> Paths = new();
+            public Vector3 StartPos = new(0f, 0f, 0f);
+            public Vector3 LastPos = new(0f, 0f, 0f);
+            public Vector3 followPos = new(0f, 0f, 0f);
+            public Vector3 lastPos = new(0f, 0f, 0f);
+            public Vector3 nextPos = new(0f, 0f, 0f);
+            private Vector3 currPos = new(0f, 0f, 0f);
             public List<Vector3> pathFinding;
             private float waypointDone;
             public float elapsedTime = -1f;
@@ -1838,7 +1838,7 @@ namespace Oxide.Plugins
             public List<WaypointInfo> cachedWaypoints;
             private int currentWaypoint = -1;
 
-            private List<uint> gatherIgnore = new List<uint>();
+            private List<uint> gatherIgnore = new();
 
             private int followTick;
             private int gatherTick;
@@ -2028,24 +2028,24 @@ namespace Oxide.Plugins
                 currentWaypoint++;
                 if (following || gathering) currentWaypoint = 0;
                 Instance.DoLog($"{npc.info.displayName} FindNextWaypoint({currentWaypoint}), Paths.Count == {Paths.Count}, time: {wpupdatetime}");
-                //if (npc.info.canride)
-                //{
-                //    Instance.DoLog($"[HumanoidMovement] {npc.info.displayName} can ride!");
-                //    if (!riding)
-                //    {
-                //        Ride();
-                //    }
-                //    else
-                //    {
-                //        var horse = npc.player.GetMountedVehicle() as RidableHorse;
-                //        if (horse != null)
-                //        {
-                //            InputMessage message = new InputMessage() { buttons = 2 };
-                //            horse.RiderInput(new InputState() { current = message }, npc.player);
-                //            Instance.DoLog($"[HumanoidMovement] {npc.info.displayName} moving horse.");
-                //        }
-                //    }
-                //}
+                if (npc.info.canride)
+                {
+                    Instance.DoLog($"[HumanoidMovement] {npc.info.displayName} can ride!");
+                    if (!riding)
+                    {
+                        Ride();
+                    }
+                    else
+                    {
+                        RidableHorse horse = npc.player.GetMountedVehicle() as RidableHorse;
+                        if (horse != null)
+                        {
+                            InputMessage message = new() { buttons = 2 };
+                            horse.PlayerServerInput(new InputState() { current = message }, npc.player);
+                            Instance.DoLog($"[HumanoidMovement] {npc.info.displayName} moving horse.");
+                        }
+                    }
+                }
                 if (Paths.Count == 0 || currentWaypoint >= Paths.Count)
                 {
                     // At the end, walk the path the other way
@@ -2183,7 +2183,7 @@ namespace Oxide.Plugins
                 Instance.DoLog("Evading...");
 
                 float evd = UnityEngine.Random.Range(-0.6f, 0.6f);
-                Vector3 ev = new Vector3(evd, 0, evd);
+                Vector3 ev = new(evd, 0, evd);
                 Vector3 newpos = npc.player.transform.position + ev;
 
                 Instance.DoLog($"  first trying new position {newpos}");
@@ -2268,7 +2268,7 @@ namespace Oxide.Plugins
 
                 if (npc.info.hostile || dofollow)
                 {
-                    List<BasePlayer> victims = new List<BasePlayer>();
+                    List<BasePlayer> victims = new();
                     Vis.Entities(npc.info.loc, 200f, victims);
                     for (int i = 0; i < victims.Count; i++)
                     {
@@ -2285,7 +2285,7 @@ namespace Oxide.Plugins
                 }
                 if (npc.info.ahostile || dofollow)
                 {
-                    List<BaseAnimalNPC> avictims = new List<BaseAnimalNPC>();
+                    List<BaseAnimalNPC> avictims = new();
                     Vis.Entities(npc.info.loc, 200f, avictims);
                     foreach (BaseAnimalNPC an in avictims)
                     {
@@ -2356,8 +2356,8 @@ namespace Oxide.Plugins
 
             public static float FlatDistance(Vector3 pos1, Vector3 pos2)
             {
-                Vector3 a = new Vector3() { x = pos1.x, y = 0, z = pos1.z };
-                Vector3 b = new Vector3() { x = pos2.x, y = 0, z = pos2.z };
+                Vector3 a = new() { x = pos1.x, y = 0, z = pos1.z };
+                Vector3 b = new() { x = pos2.x, y = 0, z = pos2.z };
                 return Vector2.Distance(a, b);
             }
 
@@ -2423,7 +2423,7 @@ namespace Oxide.Plugins
                 if (!npc.info.cansit) return;
                 //Instance.DoLog($"[HumanoidMovement] {npc.player.displayName} wants to sit...");
                 // Find a place to sit
-                List<BaseChair> chairs = new List<BaseChair>();
+                List<BaseChair> chairs = new();
                 Vis.Entities(npc.info.loc, 5f, chairs);
                 foreach (BaseChair mountable in chairs.Distinct().ToList())
                 {
@@ -2508,7 +2508,7 @@ namespace Oxide.Plugins
 
             public void FindLoot()
             {
-                List<LootContainer> res = new List<LootContainer>();
+                List<LootContainer> res = new();
                 Vis.Entities(npc.info.loc, 200f, res);//, obstructionMask);
                 res = res.OrderBy(x => Vector3.Distance(npc.info.loc, x.transform.position)).ToList();
 
@@ -2551,7 +2551,7 @@ namespace Oxide.Plugins
             {
                 Instance.DoLog($"{npc.info.displayName} looting {box.ShortPrefabName}");
 
-                List<Item> bitems = new List<Item>(box.inventory.itemList);
+                List<Item> bitems = new(box.inventory.itemList);
                 int i = 0;
                 foreach (Item item in bitems)
                 {
@@ -2608,146 +2608,146 @@ namespace Oxide.Plugins
                 }
             }
 
-            //public void Ride()
-            //{
-            //    if (!npc.info.canride) return;
-            //    RidableHorse horse = npc.player?.GetMountedVehicle() as RidableHorse;
-            //    if (horse == null)
-            //    {
-            //        // Find a place to sit
-            //        List<RidableHorse> horses = new List<RidableHorse>();
-            //        Vis.Entities(npc.info.loc, 15f, horses);
-            //        foreach (RidableHorse mountable in horses.Distinct().ToList())
-            //        {
-            //            if (mountable?.GetMounted() != null)
-            //            {
-            //                continue;
-            //            }
-            //            mountable?.AttemptMount(npc.player);
-            //            npc.player.SetParent(mountable, true, true);
-            //            riding = true;
-            //            break;
-            //        }
-            //    }
+            public void Ride()
+            {
+                if (!npc.info.canride) return;
+                RidableHorse horse = npc.player?.GetMountedVehicle() as RidableHorse;
+                if (horse == null)
+                {
+                    // Find a place to sit
+                    List<RidableHorse> horses = new();
+                    Vis.Entities(npc.info.loc, 15f, horses);
+                    foreach (RidableHorse mountable in horses.Distinct().ToList())
+                    {
+                        if (mountable?.GetMounted() != null)
+                        {
+                            continue;
+                        }
+                        mountable?.AttemptMount(npc.player);
+                        npc.player.SetParent(mountable, true, true);
+                        riding = true;
+                        break;
+                    }
+                }
 
-            //    if (horse == null)
-            //    {
-            //        riding = false;
-            //        npc.player.SetParent(null, true, true);
-            //    }
+                if (horse == null)
+                {
+                    riding = false;
+                    npc.player.SetParent(null, true, true);
+                }
 
-            //    Bike bike = npc.player?.GetMountedVehicle() as Bike;
-            //    if (bike == null)
-            //    {
-            //        // Find a place to sit
-            //        List<Bike> bikes = new List<Bike>();
-            //        Vis.Entities(npc.info.loc, 15f, bikes);
-            //        foreach (Bike mountable in bikes.Distinct().ToList())
-            //        {
-            //            if (mountable?.GetMounted() != null)
-            //            {
-            //                continue;
-            //            }
-            //            mountable?.AttemptMount(npc.player);
-            //            npc.player.SetParent(mountable, true, true);
-            //            riding = true;
-            //            break;
-            //        }
-            //    }
+                Bike bike = npc.player?.GetMountedVehicle() as Bike;
+                if (bike == null)
+                {
+                    // Find a place to sit
+                    List<Bike> bikes = new();
+                    Vis.Entities(npc.info.loc, 15f, bikes);
+                    foreach (Bike mountable in bikes.Distinct().ToList())
+                    {
+                        if (mountable?.GetMounted() != null)
+                        {
+                            continue;
+                        }
+                        mountable?.AttemptMount(npc.player);
+                        npc.player.SetParent(mountable, true, true);
+                        riding = true;
+                        break;
+                    }
+                }
 
-            //    if (bike == null)
-            //    {
-            //        riding = false;
-            //        npc.player.SetParent(null, true, true);
-            //        return;
-            //    }
+                if (bike == null)
+                {
+                    riding = false;
+                    npc.player.SetParent(null, true, true);
+                    return;
+                }
 
-            //    Vector3 targetDir;
-            //    Vector3 targetLoc;
-            //    Vector3 targetHorsePos = new Vector3();
-            //    float distance;
-            //    bool rand = true;
+                Vector3 targetDir;
+                Vector3 targetLoc;
+                Vector3 targetHorsePos = new();
+                float distance;
+                //bool rand = true;
 
-            //    if (npc.target != null)
-            //    {
-            //        distance = Vector3.Distance(npc.info.loc, npc.target.transform.position);
-            //        targetDir = npc.target.transform.position;
-            //    }
-            //    else
-            //    {
-            //        distance = Vector3.Distance(npc.info.loc, npc.info.targetloc);
-            //        targetDir = npc.info.targetloc - horse.transform.position;
-            //        //rand = true;
-            //    }
+                if (npc.target != null)
+                {
+                    distance = Vector3.Distance(npc.info.loc, npc.target.transform.position);
+                    targetDir = npc.target.transform.position;
+                }
+                else
+                {
+                    distance = Vector3.Distance(npc.info.loc, npc.info.targetloc);
+                    targetDir = npc.info.targetloc - horse.transform.position;
+                    //rand = true;
+                }
 
-            //    bool hasMoved = targetDir != Vector3.zero && Vector3.Distance(horse.transform.position, npc.info.loc) > 0.5f;
-            //    BasePlayer ptarget = npc.target as BasePlayer;
-            //    //bool isVisible = ptarget == null ? false : npc.target?.IsVisible(npc.player.eyes.position, ptarget.eyes.position, 200) == true;
-            //    bool isVisible = ptarget != null && npc.target?.IsVisible(npc.player.eyes.position, ptarget.eyes.position, 200) == true;
-            //    Vector2 randompos = UnityEngine.Random.insideUnitCircle * npc.info.damageDistance;
-            //    // Needs work:
-            //    if (npc.target != null)
-            //    {
-            //        if (isVisible)
-            //        {
-            //            targetLoc = npc.target.transform.position;
-            //            rand = false;
-            //        }
-            //        else if (Vector3.Distance(npc.info.loc, targetHorsePos) > 10 && !hasMoved)
-            //        {
-            //            npc.target = null;
-            //            targetLoc = new Vector3(randompos.x, 0, randompos.y);
-            //            targetLoc += npc.info.spawnloc;
-            //        }
-            //        else
-            //        {
-            //            targetLoc = npc.target.transform.position;
-            //        }
-            //    }
-            //    else
-            //    {
-            //        if (Vector3.Distance(npc.player.transform.position, targetHorsePos) > 10 && hasMoved)
-            //        {
-            //        }
-            //        else
-            //        {
-            //            targetLoc = new Vector3(randompos.x, 0, randompos.y);
-            //            targetLoc += npc.player.transform.position;
-            //        }
-            //    }
+                bool hasMoved = targetDir != Vector3.zero && Vector3.Distance(horse.transform.position, npc.info.loc) > 0.5f;
+                BasePlayer ptarget = npc.target as BasePlayer;
+                //bool isVisible = ptarget == null ? false : npc.target?.IsVisible(npc.player.eyes.position, ptarget.eyes.position, 200) == true;
+                bool isVisible = ptarget != null && npc.target?.IsVisible(npc.player.eyes.position, ptarget.eyes.position, 200) == true;
+                Vector2 randompos = UnityEngine.Random.insideUnitCircle * npc.info.damageDistance;
+                // Needs work:
+                if (npc.target != null)
+                {
+                    if (isVisible)
+                    {
+                        targetLoc = npc.target.transform.position;
+                        //rand = false;
+                    }
+                    else if (Vector3.Distance(npc.info.loc, targetHorsePos) > 10 && !hasMoved)
+                    {
+                        npc.target = null;
+                        targetLoc = new Vector3(randompos.x, 0, randompos.y);
+                        targetLoc += npc.info.spawnloc;
+                    }
+                    else
+                    {
+                        targetLoc = npc.target.transform.position;
+                    }
+                }
+                else
+                {
+                    if (Vector3.Distance(npc.player.transform.position, targetHorsePos) > 10 && hasMoved)
+                    {
+                    }
+                    else
+                    {
+                        targetLoc = new Vector3(randompos.x, 0, randompos.y);
+                        targetLoc += npc.player.transform.position;
+                    }
+                }
 
-            //    float angle = Vector3.SignedAngle(targetDir, horse.transform.forward, Vector3.up);
-            //    //float angle = Vector3.SignedAngle(npc.player.transform.forward, targetDir, Vector3.forward);
-            //    //float angle = Vector3.SignedAngle(targetDir, horse.transform.forward, Vector3.forward);
-            //    //RideMove(horse, distance, angle, rand);
-            //}
+                float angle = Vector3.SignedAngle(targetDir, horse.transform.forward, Vector3.up);
+                //float angle = Vector3.SignedAngle(npc.player.transform.forward, targetDir, Vector3.forward);
+                //float angle = Vector3.SignedAngle(targetDir, horse.transform.forward, Vector3.forward);
+                //RideMove(horse, distance, angle, rand);
+            }
 
-            //private void RideMove(RidableHorse horse, float distance, float angle, bool rand)
-            //{
-            //    InputMessage message = new InputMessage() { buttons = 0 };
-            //    if (distance > npc.info.damageDistance)
-            //    {
-            //        message.buttons = 2; // FORWARD
-            //    }
-            //    if (distance > 40 && !rand)
-            //    {
-            //        message.buttons = 130; // SPRINT FORWARD
-            //    }
-            //    if (horse.currentRunState == BaseRidableAnimal.RunState.sprint && distance < npc.info.maxDistance)
-            //    {
-            //        message.buttons = 0; // STOP ?
-            //    }
-            //    if (angle > 30 && angle < 180)
-            //    {
-            //        message.buttons += 8; // LEFT
-            //    }
-            //    if (angle < -30 && angle > -180)
-            //    {
-            //        message.buttons += 16; // RIGHT
-            //    }
+            private void RideMove(RidableHorse horse, float distance, float angle, bool rand)
+            {
+                InputMessage message = new() { buttons = 0 };
+                if (distance > npc.info.damageDistance)
+                {
+                    message.buttons = 2; // FORWARD
+                }
+                if (distance > 40 && !rand)
+                {
+                    message.buttons = 130; // SPRINT FORWARD
+                }
+                if (horse.IsStationary() != true && distance < npc.info.maxDistance)
+                {
+                    message.buttons = 0; // STOP ?
+                }
+                if (angle > 30 && angle < 180)
+                {
+                    message.buttons += 8; // LEFT
+                }
+                if (angle < -30 && angle > -180)
+                {
+                    message.buttons += 16; // RIGHT
+                }
 
-            //    horse.RiderInput(new InputState() { current = message }, npc.player);
-            //}
+                horse.PlayerServerInput(new InputState() { current = message }, npc.player);
+            }
 
             //public void UpdateWaypoints()
             //{
@@ -2778,7 +2778,7 @@ namespace Oxide.Plugins
 
             public List<Item> GetAmmo(Item item)
             {
-                List<Item> ammos = new List<Item>();
+                List<Item> ammos = new();
                 AmmoTypes ammoType;
                 if (!ammoTypes.TryGetValue(item.info.shortname, out ammoType)) return ammos;
                 npc.player.inventory.FindAmmo(ammos, ammoType);
@@ -2810,7 +2810,7 @@ namespace Oxide.Plugins
                 {
                     if (npc.info.monstart == null)
                     {
-                        System.Random rand = new System.Random();
+                        System.Random rand = new();
                         KeyValuePair<string, Vector3> pair = monPos.ElementAt(rand.Next(monPos.Count));
                         npc.info.monstart = pair.Key;
                         Instance.DoLog($"[HumanoidMovement] Chose monument {npc.info.monstart} at {monPos[npc.info.monstart]}");
@@ -2861,7 +2861,7 @@ namespace Oxide.Plugins
                 //    }
                 //    else
                 //    {
-                //        var horse = npc.player.GetMountedVehicle() as RidableHorse;
+                //        var horse = npc.player.GetMountedVehicle() as RidableHorse2;
                 //        if (horse != null)
                 //        {
                 //            InputMessage message = new InputMessage() { buttons = 2 };
@@ -2952,7 +2952,7 @@ namespace Oxide.Plugins
                     npc.LookToward(npc.info.targetloc);
                     return true;
                 }
-                List<BasePlayer> nearPlayers = new List<BasePlayer>();
+                List<BasePlayer> nearPlayers = new();
                 Vis.Entities(npc.info.loc, npc.info.maxDistance, nearPlayers, playerMask);
                 foreach (BasePlayer player in nearPlayers)
                 {
@@ -2964,7 +2964,7 @@ namespace Oxide.Plugins
                     npc.LookToward(npc.info.targetloc);
                     return true;
                 }
-                List<BaseAnimalNPC> nearAnimals = new List<BaseAnimalNPC>();
+                List<BaseAnimalNPC> nearAnimals = new();
                 Vis.Entities(npc.info.loc, npc.info.maxDistance, nearAnimals, playerMask);
                 foreach (BaseAnimalNPC player in nearAnimals)
                 {
@@ -2996,7 +2996,7 @@ namespace Oxide.Plugins
                 RaycastHit raycastHit;
                 if (Vector3.Distance(npc.player.transform.position, target.transform.position) < 0.5)
                 {
-                    hit = target.transform.position + npc.player.GetOffset(true);
+                    hit = target.transform.position + npc.player.GetOffset();
                 }
                 else if (!Physics.SphereCast(source, .01f, vector32, out raycastHit, float.MaxValue, targetLayer))
                 {
@@ -3018,7 +3018,7 @@ namespace Oxide.Plugins
                 }
 
                 Effect.server.Run(weapon.attackFX.resourcePath, weapon, StringPool.Get(weapon.handBone), Vector3.zero, Vector3.forward);
-                Effect effect = new Effect();
+                Effect effect = new();
                 effect.Init(Effect.Type.Projectile, source, vector32.normalized);
                 effect.scale = vector32.magnitude;
                 effect.pooledString = component.projectileObject.resourcePath;
@@ -3035,7 +3035,7 @@ namespace Oxide.Plugins
                 {
                     dest = target.transform.position;
                 }
-                HitInfo hitInfo = new HitInfo(npc.player, target, DamageType.Bullet, da, dest)
+                HitInfo hitInfo = new(npc.player, target, DamageType.Bullet, da, dest)
                 {
                     DidHit = !miss,
                     HitEntity = target,
@@ -3252,7 +3252,7 @@ namespace Oxide.Plugins
 
         public class Road
         {
-            public List<Vector3> points = new List<Vector3>();
+            public List<Vector3> points = new();
             public float width;
             public float offset;
             public int topo;
@@ -3649,7 +3649,7 @@ namespace Oxide.Plugins
                 }
                 else if (monument.name.Contains("compound") && !monPos.ContainsKey("outpost"))
                 {
-                    List<BaseEntity> ents = new List<BaseEntity>();
+                    List<BaseEntity> ents = new();
                     Vis.Entities(monument.transform.position, 50, ents);
                     foreach (BaseEntity entity in ents)
                     {
@@ -3663,7 +3663,7 @@ namespace Oxide.Plugins
                 }
                 else if (monument.name.Contains("bandit") && !monPos.ContainsKey("bandit"))
                 {
-                    List<BaseEntity> ents = new List<BaseEntity>();
+                    List<BaseEntity> ents = new();
                     Vis.Entities(monument.transform.position, 50, ents);
                     foreach (BaseEntity entity in ents)
                     {
@@ -3692,7 +3692,7 @@ namespace Oxide.Plugins
         protected override void LoadDefaultConfig()
         {
             Puts("Creating new config file.");
-            ConfigData config = new ConfigData
+            ConfigData config = new()
             {
                 Options = new Options()
                 {
@@ -3723,7 +3723,7 @@ namespace Oxide.Plugins
 
         public class ConfigData
         {
-            public Options Options = new Options();
+            public Options Options = new();
             public VersionNumber Version;
         }
 
