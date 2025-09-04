@@ -37,7 +37,7 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("Humanoids", "RFC1920", "1.3.6")]
+    [Info("Humanoids", "RFC1920", "1.3.7")]
     [Description("Adds interactive NPCs which can be modded by other plugins")]
     internal class Humanoids : RustPlugin
     {
@@ -2852,24 +2852,24 @@ namespace Oxide.Plugins
                 npc.info.roadname = roadname;
                 Instance.DoLog($"[HumanoidMovement] Moving {npc.info.displayName} to monument {npc.info.monstart} to walk {npc.info.roadname}");
 
-                //if (npc.info.canride)
-                //{
-                //    Instance.DoLog($"[HumanoidMovement] {npc.info.displayName} can ride!");
-                //    if (!riding)
-                //    {
-                //        Ride();
-                //    }
-                //    else
-                //    {
-                //        var horse = npc.player.GetMountedVehicle() as RidableHorse2;
-                //        if (horse != null)
-                //        {
-                //            InputMessage message = new InputMessage() { buttons = 2 };
-                //            horse.RiderInput(new InputState() { current = message }, npc.player);
-                //            Instance.DoLog($"[HumanoidMovement] {npc.info.displayName} moving horse.");
-                //        }
-                //    }
-                //}
+                if (npc.info.canride)
+                {
+                    Instance.DoLog($"[HumanoidMovement] {npc.info.displayName} can ride!");
+                    if (!riding)
+                    {
+                        Ride();
+                    }
+                    else
+                    {
+                        RidableHorse horse = npc.player.GetMountedVehicle() as RidableHorse;
+                        if (horse != null)
+                        {
+                            InputMessage message = new() { buttons = 2 };
+                            horse.PlayerServerInput(new() { current = message }, npc.player);
+                            Instance.DoLog($"[HumanoidMovement] {npc.info.displayName} moving horse.");
+                        }
+                    }
+                }
                 npc.player.MovePosition(npc.info.loc);
                 moving = true;
 
@@ -3543,7 +3543,7 @@ namespace Oxide.Plugins
             player.Teleport(position);
             player.UpdateNetworkGroup();
             player.StartSleeping();
-            player.SendNetworkUpdateImmediate(false);
+            player.SendNetworkUpdateImmediate();
 
             if (player.net?.connection != null) player.ClientRPC(RpcTarget.Player("StartLoading", player));
         }
