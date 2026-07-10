@@ -37,7 +37,7 @@ using UnityEngine;
 
 namespace Oxide.Plugins
 {
-    [Info("Humanoids", "RFC1920", "1.3.7")]
+    [Info("Humanoids", "RFC1920", "1.3.8")]
     [Description("Adds interactive NPCs which can be modded by other plugins")]
     internal class Humanoids : RustPlugin
     {
@@ -166,8 +166,7 @@ namespace Oxide.Plugins
             {
                 if (npc.Value.userid == 0) continue;
                 DoLog($"Spawning npc {npc.Value.userid}");
-                ulong nid = 0;
-                SpawnNPC(npc.Value, out nid);
+                SpawnNPC(npc.Value, out ulong nid);
             }
             tmpnpcs.Clear();
             SaveData();
@@ -321,8 +320,7 @@ namespace Oxide.Plugins
             //    Puts($"OnPlayerInput: {input.current.buttons}");
             if (!input.WasJustPressed(BUTTON.USE)) return;
 
-            RaycastHit hit;
-            if (Physics.Raycast(player.eyes.HeadRay(), out hit, 3f, playerMask))
+            if (Physics.Raycast(player.eyes.HeadRay(), out RaycastHit hit, 3f, playerMask))
             {
                 BasePlayer pl = hit.GetEntity().ToPlayer();
                 HumanoidPlayer hp = pl.GetComponent<HumanoidPlayer>();
@@ -509,8 +507,7 @@ namespace Oxide.Plugins
         {
             if (looter == null || !(entity is PlayerCorpse)) return;
             ulong userId = ((PlayerCorpse)entity).playerSteamID;
-            HumanoidInfo hi;
-            npcs.TryGetValue(userId, out hi);
+            npcs.TryGetValue(userId, out HumanoidInfo hi);
             if (hi != null)
             {
                 Interface.GetMod().CallHook("OnLootNPC", looter.inventory.loot, entity, userId);
@@ -577,16 +574,14 @@ namespace Oxide.Plugins
                         if (player?.transform != null)
                         {
                             HumanoidInfo npc = new(0, player.transform.position, player.transform.rotation);
-                            ulong x;
-                            SpawnNPC(npc, out x);
+                            SpawnNPC(npc, out ulong x);
                             Message(iplayer, "spawnedat", player.transform.position.ToString(), x.ToString());
                             NPCSelectGUI(player);
                         }
                         else
                         {
                             HumanoidInfo npc = new(0, Vector3.zero, new Quaternion());
-                            ulong x;
-                            SpawnNPC(npc, out x);
+                            SpawnNPC(npc, out ulong x);
                             Message(iplayer, "spawnedat", Vector3.zero.ToString(), x.ToString());
                         }
                         break;
@@ -594,8 +589,7 @@ namespace Oxide.Plugins
                         {
                             if (args.Length > 1)
                             {
-                                ulong npcid;
-                                ulong.TryParse(args[1], out npcid);
+                                ulong.TryParse(args[1], out ulong npcid);
                                 if (npcid > 0)
                                 {
                                     NpcEditGUI(player, npcid);
@@ -606,32 +600,28 @@ namespace Oxide.Plugins
                                     List<string> newarg = new(args);
                                     newarg.RemoveAt(0);
                                     string nom = string.Join(" ", newarg);
-                                    foreach (KeyValuePair<ulong, HumanoidInfo> pls in npcs)
+                                    try
                                     {
-                                        DoLog($"Checking match of {nom} to {pls.Value.displayName}");
-                                        if (string.Equals(pls.Value.displayName, nom, StringComparison.OrdinalIgnoreCase))
-                                        {
-                                            NpcEditGUI(player, pls.Value.userid);
-                                            break;
-                                        }
+                                        ulong pl = npcs.FirstOrDefault(x => x.Value.displayName == nom).Key;
+                                        NpcEditGUI(player, pl);
                                     }
+                                    catch { }
+                                    break;
                                 }
                             }
                             else
                             {
                                 DoLog("Looking for npc...");
-                                RaycastHit hit;
-                                if (Physics.Raycast(player.eyes.HeadRay(), out hit, 3f, playerMask))
+                                if (Physics.Raycast(player.eyes.HeadRay(), out RaycastHit hit, 5f, playerMask))
                                 {
                                     BasePlayer pl = hit.GetEntity().ToPlayer();
-                                    foreach (KeyValuePair<ulong, HumanoidInfo> Npc in npcs)
+                                    try
                                     {
-                                        if (Npc.Value.userid == pl.userID)
-                                        {
-                                            NpcEditGUI(player, Npc.Key);
-                                            break;
-                                        }
+                                        ulong plbyent = npcs.FirstOrDefault(x => x.Value.displayName == pl.displayName).Key;
+                                        NpcEditGUI(player, plbyent);
                                     }
+                                    catch { }
+                                    break;
                                 }
                             }
                         }
@@ -660,8 +650,7 @@ namespace Oxide.Plugins
                             }
                             else
                             {
-                                RaycastHit hit;
-                                if (Physics.Raycast(player.eyes.HeadRay(), out hit, 3f, playerMask))
+                                if (Physics.Raycast(player.eyes.HeadRay(), out RaycastHit hit, 3f, playerMask))
                                 {
                                     BasePlayer pl = hit.GetEntity().ToPlayer();
                                     if (pl.userID > 0)
@@ -774,8 +763,7 @@ namespace Oxide.Plugins
                             CuiHelper.DestroyUi(player, NPCGUL);
                             ulong userid = ulong.Parse(args[1]);
                             HumanoidInfo npc = npcs[userid];
-                            LocoMode locomode;
-                            Enum.TryParse(args[2], out locomode);
+                            Enum.TryParse(args[2], out LocoMode locomode);
                             npc.locomode = locomode;
                             npc.defaultLoco = locomode;
                             HumanoidPlayer hp = FindHumanoidByID(userid);
@@ -789,11 +777,10 @@ namespace Oxide.Plugins
                         {
                             ulong npcid = ulong.Parse(args[1]);
                             string newSpawn = player.transform.position.x.ToString() + "," + player.transform.position.y + "," + player.transform.position.z.ToString();
-                            Vector3 ns = player.transform.position;
-                            Quaternion newRot;
-                            TryGetPlayerView(player, out newRot);
+                            //Vector3 ns = player.transform.position;
+                            TryGetPlayerView(player, out Quaternion newRot);
 
-                            HumanoidPlayer hp = FindHumanoidByID(npcid);
+                            //HumanoidPlayer hp = FindHumanoidByID(npcid);
                             SetHumanoidInfo(npcid, "spawn", newSpawn);
                             //Teleport(hp.player, ns);
                             //hp.player.EndSleeping();
@@ -1519,8 +1506,7 @@ namespace Oxide.Plugins
 
         private HumanoidPlayer FindHumanoidByID(ulong userid, bool playerid = false)
         {
-            HumanoidPlayer hp;
-            if (hpcacheid.TryGetValue(userid, out hp))
+            if (hpcacheid.TryGetValue(userid, out HumanoidPlayer hp))
             {
                 DoLog($"Found matching NPC for userid {userid} in cache");
                 return hp;
@@ -1538,8 +1524,7 @@ namespace Oxide.Plugins
 
         public HumanoidPlayer FindHumanoidByName(string name)
         {
-            HumanoidPlayer hp;
-            if (hpcachenm.TryGetValue(name, out hp)) return hp;
+            if (hpcachenm.TryGetValue(name, out HumanoidPlayer hp)) return hp;
             foreach (HumanoidPlayer humanplayer in Resources.FindObjectsOfTypeAll<HumanoidPlayer>())
             {
                 if (humanplayer.info.displayName != name) continue;
@@ -1595,8 +1580,7 @@ namespace Oxide.Plugins
             }
             if (npcs[userid] != null)
             {
-                ulong x;
-                SpawnNPC(npcs[userid], out x);
+                SpawnNPC(npcs[userid], out ulong x);
             }
         }
 
@@ -1613,8 +1597,7 @@ namespace Oxide.Plugins
                     hpcacheid.Remove(player.userID);
                     hpcachenm.Remove(player.name);
                 }
-                ulong x;
-                SpawnNPC(info, out x);
+                SpawnNPC(info, out ulong x);
                 //player.EndSleeping();
             }
         }
@@ -1643,9 +1626,10 @@ namespace Oxide.Plugins
                 if (lurker.displayName == info.displayName) lurker.Kill();
             }
             const string sci = "assets/prefabs/player/player.prefab";
-            BasePlayer player = GameManager.server.CreateEntity(sci, info.loc, info.rot, true).ToPlayer();
+            //BasePlayer player = GameManager.server.CreateEntity(sci, info.loc, info.rot, true).ToPlayer();
+            BasePlayer player = GameManager.server.CreateEntity(sci, info.loc, info.rot).ToPlayer();
             HumanoidPlayer npc = player.gameObject.AddComponent<HumanoidPlayer>();
-            DoLog("Humanoid object added to player...");
+            DoLog($"Humanoid object added to player, {info.displayName}");
             npc.SetInfo(info);
             player.Spawn();
 
@@ -2188,7 +2172,6 @@ namespace Oxide.Plugins
 
                 Instance.DoLog($"  first trying new position {newpos}");
 
-                RaycastHit hitinfo;
                 int i = 0;
                 while (Physics.OverlapSphere(newpos, 2, obstructionMask) != null)
                 {
@@ -2198,7 +2181,7 @@ namespace Oxide.Plugins
 
                     Instance.DoLog($"  trying new position {newpos}");
 
-                    if (Physics.Raycast(newpos, Vector3Down, out hitinfo, 0.1f, groundLayer))
+                    if (Physics.Raycast(newpos, Vector3Down, out RaycastHit hitinfo, 0.1f, groundLayer))
                     {
                         Instance.DoLog($"  found ground or construction at {newpos}");
                         break;
@@ -2412,7 +2395,8 @@ namespace Oxide.Plugins
                 {
                     BaseMountable mounted = npc.player.GetMounted();
                     mounted.DismountPlayer(npc.player);
-                    mounted.SetFlag(BaseEntity.Flags.Busy, false, false);
+                    //mounted.SetFlag(BaseEntity.Flags.Busy, false, false);
+                    mounted.SetFlagLocal(BaseEntity.Flags.Busy, false, false);
                     sitting = false;
                 }
             }
@@ -2437,7 +2421,12 @@ namespace Oxide.Plugins
                     mountable.MountPlayer(npc.player);
                     npc.player.OverrideViewAngles(mountable.mountAnchor.transform.rotation.eulerAngles);
                     npc.player.eyes.NetworkUpdate(mountable.mountAnchor.transform.rotation);
-                    npc.player.ClientRPC(RpcTarget.Player("ForcePositionTo", npc.player), npc.player.transform.position);
+                    //npc.player.ClientRPC(RpcTarget.Player("ForcePositionTo", npc.player), npc.player.transform.position);
+                    if (npc.player != null)
+                    {
+                        npc.player.MovePosition(nextPos);
+                        npc.player.SendNetworkUpdateImmediate();
+                    }
                     //mountable.SetFlag(BaseEntity.Flags.Busy, true, false);
                     sitting = true;
                     break;
@@ -2779,8 +2768,7 @@ namespace Oxide.Plugins
             public List<Item> GetAmmo(Item item)
             {
                 List<Item> ammos = new();
-                AmmoTypes ammoType;
-                if (!ammoTypes.TryGetValue(item.info.shortname, out ammoType)) return ammos;
+                if (!ammoTypes.TryGetValue(item.info.shortname, out AmmoTypes ammoType)) return ammos;
                 npc.player.inventory.FindAmmo(ammos, ammoType);
                 return ammos;
             }
@@ -2895,8 +2883,7 @@ namespace Oxide.Plugins
                     return point - 0.65f;
                 }
 
-                RaycastHit hitinfo;
-                if (Physics.Raycast(position + new Vector3(0, 6, 0), Vector3.down, out hitinfo, 20f, constructionMask))
+                if (Physics.Raycast(position + new Vector3(0, 6, 0), Vector3.down, out RaycastHit hitinfo, 20f, constructionMask))
                 {
                     return hitinfo.point.y;
                 }
@@ -2908,8 +2895,7 @@ namespace Oxide.Plugins
             public float GetGroundY(Vector3 position)
             {
                 //position = position + Vector3.up;
-                RaycastHit hitinfo;
-                if (Physics.Raycast(position + new Vector3(0, 6, 0), Vector3.down, out hitinfo, 20f, groundLayer))
+                if (Physics.Raycast(position + new Vector3(0, 6, 0), Vector3.down, out RaycastHit hitinfo, 20f, groundLayer))
                 {
                     return hitinfo.point.y;
                 }
@@ -2993,12 +2979,11 @@ namespace Oxide.Plugins
                 Vector3 vector32 = direction * (component.projectileVelocity * weapon.projectileVelocityScale);
 
                 Vector3 hit;
-                RaycastHit raycastHit;
                 if (Vector3.Distance(npc.player.transform.position, target.transform.position) < 0.5)
                 {
                     hit = target.transform.position + npc.player.GetOffset();
                 }
-                else if (!Physics.SphereCast(source, .01f, vector32, out raycastHit, float.MaxValue, targetLayer))
+                else if (!Physics.SphereCast(source, .01f, vector32, out RaycastHit raycastHit, float.MaxValue, targetLayer))
                 {
                     Instance.DoLog($"Attack failed A: {npc.player.displayName} - {attackEntity.name}");
                     return;
@@ -3079,7 +3064,7 @@ namespace Oxide.Plugins
 
             public void SetInfo(HumanoidInfo info, bool update = false)
             {
-                Instance.DoLog($"SetInfo called for {player.UserIDString}");
+                Instance.DoLog($"SetInfo called for {info.displayName}");
                 this.info = info;
                 this.info.locomode = this.info.defaultLoco;
 
@@ -3087,7 +3072,7 @@ namespace Oxide.Plugins
                 //if (info == null) return;
                 player.displayName = info.displayName;
                 SetViewAngle(info.rot);
-                Instance.DoLog("[HumanoidPlayer] view angle set.");
+                Instance.DoLog($"[HumanoidPlayer] view angle set for {player.displayName}.");
                 player.syncPosition = true;
                 //player.EnablePlayerCollider();
                 if (!update)
@@ -3610,7 +3595,7 @@ namespace Oxide.Plugins
 
         private void FindMonuments()
         {
-            foreach (MonumentInfo monument in UnityEngine.Object.FindObjectsOfType<MonumentInfo>())
+            foreach (MonumentInfo monument in UnityEngine.Object.FindObjectsByType(typeof(MonumentInfo), FindObjectsSortMode.None).Cast<MonumentInfo>())
             {
                 if (monument.name.Contains("power_sub")) continue;
                 float realWidth = 0f;
